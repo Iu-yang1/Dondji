@@ -58,6 +58,8 @@ static void RADIO_LeaveWfm(void)
     if (gWfmActive) {
         AUDIO_AudioPathOff();
         BK1080_Init0();
+        /* WFM 进入时关闭了 BK4829；离开后先恢复其电源，随后由调用方完整重配。 */
+        BK4819_RX_TurnOn();
         gWfmActive = false;
     }
 }
@@ -79,6 +81,7 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
 #ifdef ENABLE_WFM
     [MODULATION_WFM]="WFM",
 #endif
+    [MODULATION_LSB]="LSB",
 #endif
 };
 
@@ -1047,11 +1050,17 @@ void RADIO_SetupRegisters(bool switchToForeground)
 #endif
     RADIO_SetModulation(gRxVfo->Modulation);
 #ifdef ENABLE_WFM
-    if (gRxVfo->Modulation == MODULATION_WFM)
+    if (gRxVfo->Modulation == MODULATION_WFM) {
         InterruptMask = 0;
-    else
+    } else
 #endif
-    RF_PROFILE_ApplyRx(gRxVfo);
+    {
+        if (gRxVfo->Modulation == MODULATION_USB || gRxVfo->Modulation == MODULATION_LSB ||
+            gRxVfo->Modulation == MODULATION_DSB || gRxVfo->Modulation == MODULATION_CW)
+            InterruptMask = 0; /* 零中频音频常开，不让 FM 静噪/亚音中断关闭基带。 */
+        /* WFM 时 BK4829 已睡眠，不对其重放 AGC/AFC/带宽寄存器。 */
+        RF_PROFILE_ApplyRx(gRxVfo);
+    }
 #endif
     //RADIO_SetupAGC(false, false);
 
@@ -1228,8 +1237,14 @@ void RADIO_SetModulation(ModulationMode_t modulation)
         BK4819_WriteRegister(BK4819_REG_3D, 0x2AAB);
         RADIO_SetupAGC(false, false);
 #ifdef ENABLE_CN_RF
-        AUDIO_AudioPathOn();
-        gEnableSpeaker = !gMute;
+        if (gMute) {
+            BK4819_SetAF(BK4819_AF_MUTE);
+            AUDIO_AudioPathOff();
+            gEnableSpeaker = false;
+        } else {
+            AUDIO_AudioPathOn();
+            gEnableSpeaker = true;
+        }
 #endif
         return;
     }
@@ -1268,11 +1283,16 @@ void RADIO_SetModulation(ModulationMode_t modulation)
                 mod = BK4819_AF_FM; // AM no longer needs special AF setting
                 break;
             case MODULATION_USB:
+                mod = BK4819_AF_USB;
+                break;
 #ifdef ENABLE_CN_RF
+            case MODULATION_LSB:
+                mod = BK4819_AF_LSB;
+                break;
             case MODULATION_DSB:
             case MODULATION_CW:
 #endif
-                mod = BK4819_AF_BASEBAND2;
+                mod = BK4819_AF_USB;
                 break;
         }
     }
@@ -1319,6 +1339,7 @@ void RADIO_SetModulation(ModulationMode_t modulation)
 
         case MODULATION_USB:
 #ifdef ENABLE_CN_RF
+        case MODULATION_LSB:
         case MODULATION_DSB:
         case MODULATION_CW:
 #endif
@@ -1360,12 +1381,17 @@ void RADIO_SetModulation(ModulationMode_t modulation)
     }
     
     BK4819_SetRegValue(afDacGainRegSpec, 0xF);
-    BK4819_WriteRegister(BK4819_REG_3D,
-        (modulation == MODULATION_USB
 #ifdef ENABLE_CN_RF
-         || modulation == MODULATION_DSB || modulation == MODULATION_CW
+    /*
+     * DSB/CW 依靠 Zero-IF 把两侧频谱折叠到音频；AF=4/5 的 LSB/USB
+     * 选择则需要非零低中频。使用公开寄存器表定义的 0x2AAB（约 8.46 kHz），
+     * 不复制其他机型源码中未经本机校准的 0x2B45。
+     */
+    BK4819_WriteRegister(BK4819_REG_3D,
+        (modulation == MODULATION_DSB || modulation == MODULATION_CW) ? 0 : 0x2AAB);
+#else
+    BK4819_WriteRegister(BK4819_REG_3D, modulation == MODULATION_USB ? 0 : 0x2AAB);
 #endif
-        ) ? 0 : 0x2AAB);
     BK4819_SetRegValue(afcDisableRegSpec, modulation != MODULATION_FM);
 
     RADIO_SetupAGC(modulation == MODULATION_AM
@@ -1374,8 +1400,9 @@ void RADIO_SetModulation(ModulationMode_t modulation)
 #endif
                    , false);
 #ifdef ENABLE_CN_RF
-    if (!gMute && (modulation == MODULATION_DSB || modulation == MODULATION_CW)) {
-        /* 零中频基带不依赖 FM 亚音门控。 */
+    if (!gMute && (modulation == MODULATION_USB || modulation == MODULATION_LSB ||
+                   modulation == MODULATION_DSB || modulation == MODULATION_CW)) {
+        /* SSB/零中频基带不依赖 FM 亚音门控。 */
         AUDIO_AudioPathOn();
         gEnableSpeaker = true;
     }

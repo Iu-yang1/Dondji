@@ -274,9 +274,11 @@ void RF_PROFILE_TimeSlice10ms(void)
     if (gNoiseBlankTicks != 0u) {
         if (--gNoiseBlankTicks == 0u && !gMute && gEnableSpeaker) {
             BK4819_AF_Type_t af = BK4819_AF_FM;
-            if (gRxVfo->Modulation == MODULATION_USB ||
-                gRxVfo->Modulation == MODULATION_DSB || gRxVfo->Modulation == MODULATION_CW)
-                af = BK4819_AF_BASEBAND2;
+            if (gRxVfo->Modulation == MODULATION_LSB)
+                af = BK4819_AF_LSB;
+            else if (gRxVfo->Modulation == MODULATION_USB ||
+                     gRxVfo->Modulation == MODULATION_DSB || gRxVfo->Modulation == MODULATION_CW)
+                af = BK4819_AF_USB;
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
             else if (gRxVfo->Modulation == MODULATION_BYP)
                 af = BK4819_AF_UNKNOWN3;

@@ -340,7 +340,7 @@ static void SCANNER_Key_STAR(bool bKeyPressed, bool bKeyHeld)
 {
     if (!bKeyHeld && bKeyPressed) {
         gBeepToPlay    = BEEP_1KHZ_60MS_OPTIONAL;
-        SCANNER_Start(gScanSingleFrequency);
+        (void)SCANNER_Start(gScanSingleFrequency);
     }
     return;
 }
@@ -401,14 +401,14 @@ void SCANNER_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 }
 
-void SCANNER_Start(bool singleFreq)
+bool SCANNER_Start(bool singleFreq)
 {
     RADIO_SelectVfos();
 #ifdef ENABLE_WFM
     /* 快速扫频依赖 BK4829；WFM 使用 BK1080，不能复用同一扫描状态机。 */
     if (gRxVfo->Modulation == MODULATION_WFM) {
         gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
+        return false;
     }
 #endif
 
@@ -434,6 +434,9 @@ void SCANNER_Start(bool singleFreq)
      */
     const uint8_t backup_output_power    = gRxVfo->OUTPUT_POWER;
     const uint8_t backup_channel_bw      = gRxVfo->CHANNEL_BANDWIDTH;
+#ifdef ENABLE_CN_RF
+    const RF_Profile_t backup_rf_profile = gRxVfo->RfProfile;
+#endif
 
     RADIO_InitInfo(gRxVfo, gRxVfo->CHANNEL_SAVE, gRxVfo->pRX->Frequency);
 
@@ -441,6 +444,9 @@ void SCANNER_Start(bool singleFreq)
     gRxVfo->StepFrequency        = backupFrequency;
     gRxVfo->OUTPUT_POWER         = backup_output_power;
     gRxVfo->CHANNEL_BANDWIDTH    = backup_channel_bw;
+#ifdef ENABLE_CN_RF
+    gRxVfo->RfProfile            = backup_rf_profile;
+#endif
 
     RADIO_ConfigureSquelchAndOutputPower(gRxVfo);
     RADIO_SetupRegisters(true);
@@ -491,6 +497,7 @@ void SCANNER_Start(bool singleFreq)
     gScannerSaveState      = SCAN_SAVE_NO_PROMPT;
     gScanProgressIndicator = 0;
     scanFreqVerifyState    = SCAN_FREQ_VERIFY_OFF;  // 初始化频率验证状态
+    return true;
 }
 
 void SCANNER_Stop(void)

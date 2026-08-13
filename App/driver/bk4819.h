@@ -28,8 +28,13 @@ enum BK4819_AF_Type_t
     BK4819_AF_FM        =  1u,  // FM
     BK4819_AF_ALAM      =  2u,  //
     BK4819_AF_BEEP      =  3u,  //
-    BK4819_AF_BASEBAND1 =  4u,  // RAW
-    BK4819_AF_BASEBAND2 =  5u,  // USB
+    /*
+     * 公开寄存器表把 4/5 标为保留值；以下语义来自同芯片的 Apache-2.0
+     * 开源实测实现，仍须在 BK4829 真机上用 USB/LSB 信号源复核：
+     * https://github.com/M7OCM/890-II
+     */
+    BK4819_AF_LSB       =  4u,
+    BK4819_AF_USB       =  5u,
     BK4819_AF_CTCO      =  6u,  // strange LF audio .. maybe the CTCSS LF line ?
     BK4819_AF_AM        =  7u,  // AM
     BK4819_AF_FSKO      =  8u,  // nothing

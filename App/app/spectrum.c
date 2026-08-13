@@ -149,8 +149,9 @@ RegisterSpec registerSpecs[] = {
     // {"MIX", 0x13, 3, 0b11, 1}, // TODO: hidden
 };
 
-#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
 extern uint8_t gSetting_SpectrumDisplayMode;
+
+#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
 const int8_t LNAsOptions[] = {-19, -16, -11, 0};
 const int8_t LNAOptions[] = {-24, -19, -14, -9, -6, -4, -2, 0};
 const int8_t VGAOptions[] = {-33, -27, -21, -15, -9, -6, -3, 0};
@@ -1870,6 +1871,7 @@ static void OnKeyDown(uint8_t key)
 #ifdef ENABLE_SCAN_RANGES
         if (gScanRangeStart)
             break;
+#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
         if (gSetting_SpectrumDisplayMode == 0u && kbd.counter == 16)
         {
             SaveSettings();
@@ -1877,6 +1879,7 @@ static void OnKeyDown(uint8_t key)
             DeInitSpectrum();
             break;
         }
+#endif
 #endif
         FreqInput();
         break;
@@ -1988,6 +1991,7 @@ void OnKeyDownStill(KEY_Code_t key)
         break;
     case KEY_5:
 #ifdef ENABLE_SCAN_RANGES
+#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
         if (gSetting_SpectrumDisplayMode == 0u && kbd.counter == 16)
         {
             SaveSettings();
@@ -1995,6 +1999,7 @@ void OnKeyDownStill(KEY_Code_t key)
             DeInitSpectrum();
             break;
         }
+#endif
 #endif
         FreqInput();
         break;

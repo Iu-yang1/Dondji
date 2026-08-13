@@ -740,7 +740,10 @@ uint8_t MENU_GetActualMenuIndexFromCursor(uint8_t cursor)
 
 void MENU_StartCssScan(void)
 {
-    SCANNER_Start(true);
+    if (!SCANNER_Start(true)) {
+        gUpdateStatus = true;
+        return;
+    }
     gUpdateStatus = true;
     gCssBackgroundScan = true;
 

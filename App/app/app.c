@@ -1137,7 +1137,9 @@ void APP_Update(void)
             || RADIO_IsWfmActive()
 #endif
 #ifdef ENABLE_CN_RF
-            /* DSB/CW 是零中频直通监听，音频需保持开启，不能进入周期睡眠。 */
+            /* SSB/DSB/CW 基带音频须保持开启，不能进入周期睡眠。 */
+            || gRxVfo->Modulation == MODULATION_USB
+            || gRxVfo->Modulation == MODULATION_LSB
             || gRxVfo->Modulation == MODULATION_DSB
             || gRxVfo->Modulation == MODULATION_CW
 #endif

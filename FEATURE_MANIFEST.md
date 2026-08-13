@@ -10,6 +10,7 @@
 - [BK4819 V3 寄存器表](https://alfaexploit.com/files/BK4819V3Registers_List_20201218.pdf)：只用于与本机 BK4829 现有驱动中同地址、同语义字段交叉核对。
 - [BK4819 V3 Application Note](https://www.scribd.com/document/716113950/BK4819-V3-Application-Note-20210428-machine-translated-English)：用于核对 `REG_40` 发射频偏和 `REG_73` AFC 的公开字段定义。
 - [losehu/uv-k5-firmware-custom](https://github.com/losehu/uv-k5-firmware-custom)等公开源码只用于确认 UV-K 系列现有实验路线；不同射频芯片或外接 SI4732 的实现没有直接移植到 BK4829。
+- [M7OCM/890-II](https://github.com/M7OCM/890-II) Apache-2.0 开源源码：同 BK4819 系列 `REG_47` AF=4/5 的 LSB/USB 实测接收路径参考；公开寄存器表仍将这两个值列为保留，因此本项目保留 BK4829 真机验证要求。
 
 未找到 Beken 公开发布的 BK4829 application note 或完整寄存器手册。因此未知寄存器语义不外推；资料不能证明的功能保持禁用并列入硬件待测项。没有使用或逆向 IJV 二进制、Radio Manager 或其他非公开实现。
 
@@ -37,7 +38,7 @@
 ### 默认频率锁与兼容
 
 - CN-RF 首次启动或损坏设置回退为 `F_LOCK_NONE`；完整恢复出厂会明确写入同一值。本任务没有执行恢复出厂。
-- `F_LOCK` 的外置 Flash 编号固定为 0–10，不再随 CA/PMR/GMRS 编译开关重排；菜单通过独立映射隐藏已删除项。旧固件保存的已删除地区专用值会安全回退到 `F_LOCK_DEF`，不会被误解释成另一项或意外扩大 TX。
+- `F_LOCK` 的外置 Flash 编号固定为 0–10，不再随 CA/PMR/GMRS 编译开关重排；菜单通过独立映射隐藏已删除项。CN-RF 读到旧固件保存的已删除地区专用值时回退到 `F_LOCK_NONE`；其他预设仍回退 `F_LOCK_DEF`，且不会把旧值误解释成另一项。
 - `F_LOCK_NONE` 只允许现有 `frequencyBandTable` 与 BK4829 接收检查已覆盖的频段，不扩大 VCO/滤波器/PA/校准范围。
 - 普通 F Lock 菜单、每信道 `TX_LOCK`、PTT、TOT、BCL、供电/功率保护和原发射状态机均保留。
 
@@ -54,13 +55,14 @@
 | `ENABLE_FEAT_F4HWN_CA` | 120328 B | 72 B |
 | `ENABLE_FEAT_F4HWN_PMR` | 120376 B | 24 B |
 
-`ENABLE_DTMF_CALLING` 在 Fusion 基线中已经为 OFF，因而没有可再释放的单项差值。CN-RF 最终镜像包含新增高级 RF、10 档带宽与最小 WFM 路径后仍比 Fusion 小 3128 B。
+`ENABLE_DTMF_CALLING` 在 Fusion 基线中已经为 OFF，因而没有可再释放的单项差值。CN-RF 最终镜像包含新增高级 RF、10 档带宽与最小 WFM 路径后仍比 Fusion 小 2964 B。
 
 ## 模式与接收链路
 
 | 功能 | 菜单/显示 | 实现 | 状态 |
 |---|---|---|---|
-| FM、AM、USB | `MODE` / 模式快捷切换 | 保留 Dondji 路径；高级配置在每次完整重配后重放 | 已编译，硬件回归待测 |
+| FM、AM | `MODE` / 模式快捷切换 | 保留 Dondji 路径；高级配置在每次完整重配后重放 | 已编译，硬件回归待测 |
+| USB、LSB | `MODE → USB/LSB` / `上边带/下边带` | BK4829 低中频接收，`REG_3D=0x2AAB`（公开表约 8.46 kHz IF）、`REG_47` AF=5/4；关闭 AM 解调、AFC 及 FM 静噪/亚音中断，基带音频常开 | 已实现并按信道/VFO 保存；边带抑制度和频率误差待信号源验证 |
 | AMB | `MODE → AMB` / `广播调幅` | BK4829 AM 解调并旁路已定义的 RX HPF、LPF、去加重位 | 已实现，音质/占用带宽待测 |
 | DSB | `MODE → DSB` / `双边带` | AF=5、零中频基带、关闭 FM 音调滤波；同时接收 USB/LSB 的实验性 DSB 路径，保持音频和 RX 电源 | 已实现接收，需信号源验证 |
 | CW | `MODE → CW` / `电报` | DSB 同源的零中频接收；PTT 作为直键，发射无调制载波，仍走 PTT/TOT/BCL/功率保护 | 已实现，频谱/功率待测 |
@@ -68,7 +70,7 @@
 | BYP | `MODE → BYP` / `旁路` | BK4829 AF=9，旁路 RX/TX 音频滤波，供外部解码器取音频 | 已实现，电平/频响待测 |
 | USB/LSB/DSB 发射 | 无 | BK4829 公开资料只证明恒包络 FM 发射器，未证明 I/Q 或边带发射控制 | **安全禁用，未伪实现** |
 
-除 FM 和 CW 外，CN-RF 模式均禁止发射。CW 结束时不发送 Roger、DTMF 或 CTCSS/DCS 尾音。模式切换、双守候和扫频的完整配置路径会重新设置调制、带宽、AGC、AFC和音频路径，避免保留前一模式寄存器；WFM 期间停止 BK4829 中断、双守候和省电切换，离开时关闭 BK1080。
+除 FM 和 CW 外，CN-RF 模式均禁止发射。CW 结束时不发送 Roger、DTMF 或 CTCSS/DCS 尾音。模式切换、双守候和扫频的完整配置路径会重新设置调制、带宽、AGC、AFC和音频路径，避免保留前一模式寄存器；USB/LSB/DSB/CW 不进入会切断零中频音频的周期省电，Noise Blanker 结束后也按当前边带恢复 AF=4/5；WFM 期间停止 BK4829 中断、双守候和省电切换，拒绝 BK4829 扫频入口，离开时关闭 BK1080 并显式唤醒 BK4829。
 
 ## 高级 RF 控制
 
@@ -119,17 +121,17 @@ CN-RF v1 包含 16 字节签名/版本/记录尺寸/数量/CRC 头，以及 `(10
 
 - `cmake --preset CN_RF`：通过。
 - `cmake --build --preset CN_RF --parallel`：通过。
-- ELF：text 116724 B、data 548 B、bss 13464 B；链接器 FLASH 117272 B、RAM 14008 B。
-- `Dondji.cn-rf.bin`：117272 B；上限 120832 B；余量 3560 B。
+- ELF：text 116884 B、data 548 B、bss 13464 B；链接器 FLASH 117436 B、RAM 14008 B。
+- `Dondji.cn-rf.bin`：117436 B；上限 120832 B；余量 3396 B。
 - 构建图只包含最小 `driver/bk1080.c`，不包含旧 `app/fm.c`、`ui/fmradio.c`、游戏、CW 练习器、Toolbox 或截图模块。
-- 原有预设回归构建通过：Fusion（FLASH 120400 B / RAM 15120 B）、Game（FLASH 113392 B / RAM 13584 B）、Broadcast（FLASH 111356 B / RAM 13544 B）。
+- 原有预设回归构建通过：Fusion（FLASH 120400 B / RAM 15120 B）、Game（FLASH 113392 B / RAM 13584 B）、Broadcast（FLASH 111356 B / RAM 13544 B）、Custom（FLASH 101656 B / RAM 12240 B）、Bandscope（FLASH 113128 B / RAM 14912 B）、Basic（FLASH 112564 B / RAM 13880 B）、RescueOps（FLASH 108088 B / RAM 13416 B）。
 - 编译/静态检查不能替代真机射频验证。刷写前应备份整个外置 Flash 与校准区；发射测试必须接假负载、功率计、频偏仪和频谱仪。
 
 ## 真机验收清单
 
 1. 两个 VFO 与 MR/VFO 来回切换所有模式，检查静音、双守候、扫描暂停/恢复、提示音后的音频恢复。
 2. 用已校准信号源逐档测量 10 档 IF/音频带宽（特别确认 W26 的实际 -6 dB/-60 dB 占用带宽）、RSSI、AGC 攻击/释放和 RF Gain/LNA 饱和点。
-3. 用 AM、USB、LSB、CW 信号源确认 AMB/DSB/CW 的频率偏置、音质及零中频直流噪声；DSB 不应被宣传为单边带选择滤波。
+3. 用 AM、USB、LSB、CW 信号源确认 AMB/DSB/CW 的频率偏置、音质及零中频直流噪声；分别验证 USB 的 AF=5、LSB 的 AF=4、边带抑制度、载频误差容限，并确认 Noise Blanker、双守候和提示音后仍恢复正确边带；DSB 不应被宣传为单边带选择滤波。
 4. 用 76–108 MHz WFM 信号源验证 BK1080 灵敏度、静音、提示音恢复和越界回退。
 5. 用声卡/隔离线验证 BYP 对 APRS/AIS/SSTV 外部解码；不要把 BYP 表述为机内数字协议。
 6. CW 发射仅接假负载，验证 PTT 直键、TOT、BCL、低电/过压保护、PA 功率和杂散；确认其他非 FM 模式拒绝发射。

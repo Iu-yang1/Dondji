@@ -253,8 +253,11 @@ static void processFKeyFunction(const KEY_Code_t Key, const bool beep)
             gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
             gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;     
 
-            SCANNER_Start(false);
-            gRequestDisplayScreen = DISPLAY_SCANNER;
+            if (SCANNER_Start(false)) {
+                gRequestDisplayScreen = DISPLAY_SCANNER;
+            } else {
+                gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
+            }
             break;
 
         case KEY_5:
@@ -930,9 +933,12 @@ static void MAIN_Key_STAR(bool bKeyPressed, bool bKeyHeld)
                 gBackup_CROSS_BAND_RX_TX  = gEeprom.CROSS_BAND_RX_TX;
                 gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
 
-                SCANNER_Start(true);
-                gRequestDisplayScreen = DISPLAY_SCANNER;
-                gUpdateStatus         = true;
+                if (SCANNER_Start(true)) {
+                    gRequestDisplayScreen = DISPLAY_SCANNER;
+                    gUpdateStatus         = true;
+                } else {
+                    gEeprom.CROSS_BAND_RX_TX = gBackup_CROSS_BAND_RX_TX;
+                }
                 return;
             }
         }

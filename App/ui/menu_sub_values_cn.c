@@ -304,6 +304,7 @@ const char gSubMenu_MODULATION_CN[][13] = {
 #ifdef ENABLE_WFM
     "\xe5\xae\xbd\xe5\xb8\xa6\xe8\xb0\x83\xe9\xa2\x91", /* 宽带调频 */
 #endif
+    "\xe4\xb8\x8b\xe8\xbe\xb9\xe5\xb8\xa6", /* 下边带 */
 #endif
 };
 

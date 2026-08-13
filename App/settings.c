@@ -387,21 +387,24 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
      * 已保存的有效 F Lock 选择保持不变，用户仍可在菜单中手动设回限制。
      */
     gSetting_F_LOCK            = (Data[0] < F_LOCK_LEN) ? Data[0] : F_LOCK_NONE;
+#define REMOVED_F_LOCK_FALLBACK F_LOCK_NONE
 #else
     gSetting_F_LOCK            = (Data[0] < F_LOCK_LEN) ? Data[0] : F_LOCK_DEF;
+#define REMOVED_F_LOCK_FALLBACK F_LOCK_DEF
 #endif
 #ifndef ENABLE_FEAT_F4HWN_CA
     if (gSetting_F_LOCK == F_LOCK_CA)
-        gSetting_F_LOCK = F_LOCK_DEF;
+        gSetting_F_LOCK = REMOVED_F_LOCK_FALLBACK;
 #endif
 #ifndef ENABLE_FEAT_F4HWN_PMR
     if (gSetting_F_LOCK == F_LOCK_PMR)
-        gSetting_F_LOCK = F_LOCK_DEF;
+        gSetting_F_LOCK = REMOVED_F_LOCK_FALLBACK;
 #endif
 #ifndef ENABLE_FEAT_F4HWN_GMRS_FRS_MURS
     if (gSetting_F_LOCK == F_LOCK_GMRS_FRS_MURS)
-        gSetting_F_LOCK = F_LOCK_DEF;
+        gSetting_F_LOCK = REMOVED_F_LOCK_FALLBACK;
 #endif
+#undef REMOVED_F_LOCK_FALLBACK
 #ifndef ENABLE_FEAT_F4HWN
     gSetting_350TX             = (Data[1] < 2) ? Data[1] : false;  // was true
 #endif

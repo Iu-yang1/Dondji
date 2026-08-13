@@ -75,8 +75,12 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
         BK1080_Mute(true);
 #endif
 #ifdef ENABLE_WFM
-    if (RADIO_IsWfmActive())
+    const bool restoreWfm = RADIO_IsWfmActive();
+    if (restoreWfm) {
         BK1080_Mute(true);
+        /* BK4819 在 WFM 期间睡眠，提示音前须先恢复 DSP/晶振电源。 */
+        BK4819_RX_TurnOn();
+    }
 #endif
 
     AUDIO_AudioPathOff();
@@ -195,7 +199,7 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
 /* 提示音临时使用 BK4829；WFM 返回时必须重新睡眠 BK4829 并恢复 BK1080。 */
 #ifdef ENABLE_WFM
-    if (RADIO_IsWfmActive())
+    if (restoreWfm)
         RADIO_SetModulation(gRxVfo->Modulation);
     else
 #endif

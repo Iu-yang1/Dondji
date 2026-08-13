@@ -219,6 +219,14 @@ void ACTION_Scan(bool bRestart)
 
     RADIO_SelectVfos();
 
+#ifdef ENABLE_WFM
+    if (gRxVfo->Modulation == MODULATION_WFM) {
+        /* 拒绝后不进入扫描 UI，也不改写恢复状态。 */
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+#endif
+
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(gRxVfo->CHANNEL_SAVE)) {
         return;
@@ -619,7 +627,11 @@ void ACTION_MainOnly(void)
 #ifdef ENABLE_FEAT_F4HWN_AUDIO
 void ACTION_RxA(void)
 {
-    if(gRxVfo->Modulation == MODULATION_AM)
+    if(gRxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+       || gRxVfo->Modulation == MODULATION_AMB
+#endif
+    )
         gSetting_set_audio_am = (gSetting_set_audio_am + 1) % 3;
     else if (gRxVfo->Modulation == MODULATION_FM)
         gSetting_set_audio_fm = (gSetting_set_audio_fm + 1) % 5;

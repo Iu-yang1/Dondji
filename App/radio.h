@@ -76,6 +76,8 @@ typedef enum {
 #ifdef ENABLE_WFM
     MODULATION_WFM,
 #endif
+    /* 追加到已有 CN-RF 模式之后，避免改变旧信道中 0..8 的模式编号。 */
+    MODULATION_LSB,
 #endif
 
     MODULATION_UKNOWN

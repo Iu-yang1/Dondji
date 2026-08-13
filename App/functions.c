@@ -204,10 +204,16 @@ void FUNCTION_Transmit()
     // turn the RED LED on
     BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);
 
-    DTMF_Reply();
+#ifdef ENABLE_CN_RF
+    if (gCurrentVfo->Modulation != MODULATION_CW)
+#endif
+    {
+        /* CW 直键必须保持纯载波，不能让 PTT ID/应答路径解除 TX 静音。 */
+        DTMF_Reply();
 
-    if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
-        BK4819_PlaySingleTone(2525, 250, 0, gEeprom.DTMF_SIDE_TONE);
+        if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)
+            BK4819_PlaySingleTone(2525, 250, 0, gEeprom.DTMF_SIDE_TONE);
+    }
 
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)
     if (gAlarmState != ALARM_STATE_OFF) {

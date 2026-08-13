@@ -23,6 +23,9 @@
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
+#ifdef ENABLE_WFM
+    #include "driver/bk1080.h"
+#endif
 #include "audio.h"
 #include "dcs.h"
 #include "driver/bk4819.h"
@@ -42,6 +45,23 @@ VFO_Info_t    *gRxVfo;
 VFO_Info_t    *gCurrentVfo;
 DCS_CodeType_t gCurrentCodeType;
 VfoState_t     VfoState[2];
+#ifdef ENABLE_WFM
+static bool gWfmActive;
+
+bool RADIO_IsWfmActive(void)
+{
+    return gWfmActive;
+}
+
+static void RADIO_LeaveWfm(void)
+{
+    if (gWfmActive) {
+        AUDIO_AudioPathOff();
+        BK1080_Init0();
+        gWfmActive = false;
+    }
+}
+#endif
 
 const char gModulationStr[MODULATION_UKNOWN][4] = {
     [MODULATION_FM]="FM",
@@ -50,7 +70,15 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
 
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
     [MODULATION_BYP]="BYP",
-    [MODULATION_RAW]="RAW"
+    [MODULATION_RAW]="RAW",
+#endif
+#ifdef ENABLE_CN_RF
+    [MODULATION_AMB]="AMB",
+    [MODULATION_DSB]="DSB",
+    [MODULATION_CW]="CW",
+#ifdef ENABLE_WFM
+    [MODULATION_WFM]="WFM",
+#endif
 #endif
 };
 
@@ -244,6 +272,10 @@ void RADIO_InitInfo(VFO_Info_t *pInfo, const uint16_t ChannelSave, const uint32_
     pInfo->pRX                      = &pInfo->freq_config_RX;
     pInfo->pTX                      = &pInfo->freq_config_TX;
     pInfo->Compander                = 0;  // off
+
+#ifdef ENABLE_CN_RF
+    RF_PROFILE_SetDefaults(&pInfo->RfProfile, BANDWIDTH_WIDE, gEeprom.MIC_SENSITIVITY);
+#endif
 
     if (ChannelSave == (FREQ_CHANNEL_FIRST + BAND2_108MHz))
         pInfo->Modulation = MODULATION_AM;
@@ -519,6 +551,11 @@ void RADIO_ConfigureChannel(const unsigned int VFO, const unsigned int configure
     }
 
     pVfo->Compander = att->compander;
+
+#ifdef ENABLE_CN_RF
+    RF_PROFILE_Load(channel, VFO, &pVfo->RfProfile,
+                    pVfo->CHANNEL_BANDWIDTH, gEeprom.MIC_SENSITIVITY);
+#endif
 
     #ifdef ENABLE_FEAT_F4HWN_RESCUE_OPS
     if(gRemoveOffset)
@@ -1001,6 +1038,21 @@ void RADIO_SetupRegisters(bool switchToForeground)
     }
 
     RADIO_SetupAGC(gRxVfo->Modulation == MODULATION_AM, false);
+#ifdef ENABLE_CN_RF
+    /* 每次完整重配都重放模式和高级配置，避免双守候/扫频遗留旧寄存器状态。 */
+#ifdef ENABLE_WFM
+    if (gRxVfo->Modulation == MODULATION_WFM &&
+        (gRxVfo->pRX->Frequency < 7600000u || gRxVfo->pRX->Frequency > 10800000u))
+        gRxVfo->Modulation = MODULATION_FM;
+#endif
+    RADIO_SetModulation(gRxVfo->Modulation);
+#ifdef ENABLE_WFM
+    if (gRxVfo->Modulation == MODULATION_WFM)
+        InterruptMask = 0;
+    else
+#endif
+    RF_PROFILE_ApplyRx(gRxVfo);
+#endif
     //RADIO_SetupAGC(false, false);
 
     // enable/disable BK4819 selected interrupts
@@ -1059,6 +1111,9 @@ void RADIO_SetupRegisters(bool switchToForeground)
 
 void RADIO_SetTxParameters(void)
 {
+#ifdef ENABLE_WFM
+    RADIO_LeaveWfm();
+#endif
     BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
@@ -1098,6 +1153,15 @@ void RADIO_SetTxParameters(void)
 
     BK4819_PrepareTransmit();
 
+#ifdef ENABLE_CN_RF
+    RF_PROFILE_ApplyTx(gCurrentVfo);
+    if (gCurrentVfo->Modulation == MODULATION_CW) {
+        /* CW 是 PTT 控制的无调制载波，仍走原 PTT/TOT/BCL/功率保护状态机。 */
+        BK4819_SetTxDeviation(0);
+        BK4819_EnterTxMute();
+    }
+#endif
+
     SYSTEM_DelayMs(10);
 
     BK4819_PickRXFilterPathBasedOnFrequency(gCurrentVfo->pTX->Frequency);
@@ -1110,6 +1174,11 @@ void RADIO_SetTxParameters(void)
 
     SYSTEM_DelayMs(10);
 
+#ifdef ENABLE_CN_RF
+    if (gCurrentVfo->Modulation == MODULATION_CW) {
+        BK4819_ExitSubAu();
+    } else
+#endif
     switch (gCurrentVfo->pTX->CodeType)
     {
         default:
@@ -1130,6 +1199,27 @@ void RADIO_SetTxParameters(void)
 
 void RADIO_SetModulation(ModulationMode_t modulation)
 {
+#ifdef ENABLE_WFM
+    if (modulation == MODULATION_WFM) {
+        const uint32_t frequency = gRxVfo->pRX->Frequency;
+        if (frequency >= 7600000u && frequency <= 10800000u) {
+            BK4819_WriteRegister(BK4819_REG_3F, 0);
+            BK4819_Sleep();
+            BK1080_Init((uint16_t)(frequency / 10000u), 1u);
+            BK1080_Mute(gMute);
+            if (!gMute) {
+                AUDIO_AudioPathOn();
+                gEnableSpeaker = true;
+            }
+            gWfmActive = true;
+            return;
+        }
+        /* 非 76–108 MHz 的损坏/旧配置安全回退到 FM，不扩大 BK1080 范围。 */
+        modulation = MODULATION_FM;
+    }
+    RADIO_LeaveWfm();
+#endif
+
     #ifdef ENABLE_BYP_RAW_DEMODULATORS
     // BYP on BK4829 uses full audio bypass profile.
     if (modulation == MODULATION_BYP) {
@@ -1137,6 +1227,10 @@ void RADIO_SetModulation(ModulationMode_t modulation)
         BK4819_SetRegValue(afDacGainRegSpec, 0xF);
         BK4819_WriteRegister(BK4819_REG_3D, 0x2AAB);
         RADIO_SetupAGC(false, false);
+#ifdef ENABLE_CN_RF
+        AUDIO_AudioPathOn();
+        gEnableSpeaker = !gMute;
+#endif
         return;
     }
 
@@ -1168,9 +1262,16 @@ void RADIO_SetModulation(ModulationMode_t modulation)
                 mod = BK4819_AF_FM;
                 break;
             case MODULATION_AM:
+#ifdef ENABLE_CN_RF
+            case MODULATION_AMB:
+#endif
                 mod = BK4819_AF_FM; // AM no longer needs special AF setting
                 break;
             case MODULATION_USB:
+#ifdef ENABLE_CN_RF
+            case MODULATION_DSB:
+            case MODULATION_CW:
+#endif
                 mod = BK4819_AF_BASEBAND2;
                 break;
         }
@@ -1189,6 +1290,9 @@ void RADIO_SetModulation(ModulationMode_t modulation)
     switch (modulation)
     {
         case MODULATION_AM:
+#ifdef ENABLE_CN_RF
+        case MODULATION_AMB:
+#endif
         {
             uint16_t uVar1 = BK4819_ReadRegister(0x31);
             BK4819_WriteRegister(0x31, uVar1 | 1); // AM Demodulation Enable
@@ -1203,10 +1307,21 @@ void RADIO_SetModulation(ModulationMode_t modulation)
             #endif
 
             BK4819_SetFilterBandwidth(RADIO_GetAMFilterBandwidth(gCurrentVfo), true);
+#ifdef ENABLE_CN_RF
+            if (modulation == MODULATION_AMB) {
+                /* AMB 旁路接收 HPF/LPF/去加重；这些 REG_2B 位已有公开定义。 */
+                uint16_t reg2b = BK4819_ReadRegister(BK4819_REG_2B);
+                BK4819_WriteRegister(BK4819_REG_2B, reg2b | (1u << 10) | (1u << 9) | (1u << 8));
+            }
+#endif
             break;
         }
 
         case MODULATION_USB:
+#ifdef ENABLE_CN_RF
+        case MODULATION_DSB:
+        case MODULATION_CW:
+#endif
         {
             uint16_t uVar1 = BK4819_ReadRegister(0x31);
             BK4819_WriteRegister(0x31, uVar1 & 0xfffe); // AM Demodulation Disable
@@ -1245,10 +1360,26 @@ void RADIO_SetModulation(ModulationMode_t modulation)
     }
     
     BK4819_SetRegValue(afDacGainRegSpec, 0xF);
-    BK4819_WriteRegister(BK4819_REG_3D, modulation == MODULATION_USB ? 0 : 0x2AAB);
+    BK4819_WriteRegister(BK4819_REG_3D,
+        (modulation == MODULATION_USB
+#ifdef ENABLE_CN_RF
+         || modulation == MODULATION_DSB || modulation == MODULATION_CW
+#endif
+        ) ? 0 : 0x2AAB);
     BK4819_SetRegValue(afcDisableRegSpec, modulation != MODULATION_FM);
 
-    RADIO_SetupAGC(modulation == MODULATION_AM, false);
+    RADIO_SetupAGC(modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+                   || modulation == MODULATION_AMB
+#endif
+                   , false);
+#ifdef ENABLE_CN_RF
+    if (!gMute && (modulation == MODULATION_DSB || modulation == MODULATION_CW)) {
+        /* 零中频基带不依赖 FM 亚音门控。 */
+        AUDIO_AudioPathOn();
+        gEnableSpeaker = true;
+    }
+#endif
 }
 
 void RADIO_SetupAGC(bool listeningAM, bool disable)
@@ -1348,7 +1479,13 @@ void RADIO_PrepareTX(void)
         State = VFO_STATE_TX_DISABLE;
     }
 #endif
-#ifndef ENABLE_TX_WHEN_AM
+#ifdef ENABLE_CN_RF
+    else if (gCurrentVfo->Modulation != MODULATION_FM &&
+             gCurrentVfo->Modulation != MODULATION_CW) {
+        /* 未经 BK4829 资料/仪表证明的 AM/SSB/WFM/BYP 发射一律禁止。 */
+        State = VFO_STATE_TX_DISABLE;
+    }
+#elif !defined(ENABLE_TX_WHEN_AM)
     else if (gCurrentVfo->Modulation != MODULATION_FM) {
         // not allowed to TX if in AM mode
         State = VFO_STATE_TX_DISABLE;
@@ -1442,6 +1579,13 @@ void RADIO_SendCssTail(void)
 
 void RADIO_SendEndOfTransmission(void)
 {
+#ifdef ENABLE_CN_RF
+    if (gCurrentVfo->Modulation == MODULATION_CW) {
+        BK4819_EnterTxMute();
+        RADIO_SetupRegisters(false);
+        return;
+    }
+#endif
     BK4819_PlayRoger();
     DTMF_SendEndOfTransmission();
 

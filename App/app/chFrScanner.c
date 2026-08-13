@@ -1,8 +1,10 @@
 
 #include "app/app.h"
 #include "app/chFrScanner.h"
+#include "audio.h"
 #include "functions.h"
 #include "misc.h"
+#include "radio.h"
 #include "settings.h"
 //#include "debugging.h"
 
@@ -48,14 +50,21 @@ static void NextMemChannel(void);
 
 void CHFRSCANNER_Start(const bool storeBackupSettings, const int8_t scan_direction)
 {
+    RADIO_SelectVfos();
+#ifdef ENABLE_WFM
+    /* BK1080 与 BK4829 扫描器不能同时工作；明确拒绝，避免扫描状态悬停。 */
+    if (gRxVfo->Modulation == MODULATION_WFM) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+#endif
+
     if (storeBackupSettings) {
         initialCROSS_BAND_RX_TX = gEeprom.CROSS_BAND_RX_TX;
         gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
         gScanKeepResult = false;
     }
     
-    RADIO_SelectVfos();
-
     gNextMrChannel   = gRxVfo->CHANNEL_SAVE;
     currentScanList = SCAN_NEXT_CHAN_SCANLIST1;
     gScanStateDir    = scan_direction;

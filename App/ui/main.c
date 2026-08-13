@@ -205,7 +205,9 @@ static void DualVfoHeaderLeft(unsigned int vfoIdx, char *out, size_t outLen)
 static void DualVfoHeaderRight(unsigned int vfoIdx, char *out, size_t outLen)
 {
     const VFO_Info_t *v = &gEeprom.VfoInfo[vfoIdx];
-#ifdef ENABLE_FEAT_F4HWN_NARROWER
+#ifdef ENABLE_CN_RF
+    const char *bw = gRfBandwidthNames[v->RfProfile.bandwidth];
+#elif defined(ENABLE_FEAT_F4HWN_NARROWER)
     bool narrower = (v->CHANNEL_BANDWIDTH == BANDWIDTH_NARROW && gSetting_set_nfm == 1);
     const char *bw =
         (v->CHANNEL_BANDWIDTH == BANDWIDTH_WIDE) ? "WIDE" : (narrower ? "NAR+" : "NAR");
@@ -2860,15 +2862,19 @@ void UI_DisplayMain(void)
                     // }
 
                     // if (RxBlink == 0 || RxBlink == 1) {
-                        if(gRxVfo->Modulation == MODULATION_AM) {
+                        if(gRxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+                           || gRxVfo->Modulation == MODULATION_AMB
+#endif
+                        ) {
                             #ifdef ENABLE_FEAT_F4HWN_AUDIO
                                 strcpy(String, gSubMenu_SET_AUD_AM[gSetting_set_audio_am]);
                             #else
                                 strcpy(String, "AIR");
                             #endif
                         }
-                        else if (gRxVfo->Modulation == MODULATION_USB) {
-                            strcpy(String, "USB");
+                        else if (gRxVfo->Modulation != MODULATION_FM) {
+                            strcpy(String, gModulationStr[gRxVfo->Modulation]);
                         }
                         else {
                             #ifdef ENABLE_FEAT_F4HWN_AUDIO
@@ -3499,6 +3505,12 @@ void UI_DisplayMain(void)
 #endif
 
 #if ENABLE_FEAT_F4HWN
+#ifdef ENABLE_CN_RF
+        if (gSetting_set_gui)
+            UI_PrintStringSmallNormal(gRfBandwidthNames[vfoInfo->RfProfile.bandwidth], LCD_WIDTH + 74, 0, line + 1);
+        else
+            GUI_DisplaySmallest(gRfBandwidthNames[vfoInfo->RfProfile.bandwidth], 91, line == 0 ? 17 : 49, false, true);
+#else
         #ifdef ENABLE_FEAT_F4HWN_NARROWER
             bool narrower = 0;
 
@@ -3529,6 +3541,7 @@ void UI_DisplayMain(void)
                 GUI_DisplaySmallest(bandWidthNames[vfoInfo->CHANNEL_BANDWIDTH], 91, line == 0 ? 17 : 49, false, true);
             }
         #endif
+#endif
 #else
         if (vfoInfo->CHANNEL_BANDWIDTH == BANDWIDTH_NARROW)
             UI_PrintStringSmallNormal("N", LCD_WIDTH + 70, 0, line + 1);

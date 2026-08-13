@@ -23,6 +23,9 @@
 #include "dcs.h"
 #include "driver/bk4819.h"
 #include "frequencies.h"
+#ifdef ENABLE_CN_RF
+#include "rf_profile.h"
+#endif
 
 enum {
     RADIO_CHANNEL_UP   = 0x01u,
@@ -64,6 +67,15 @@ typedef enum {
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
     MODULATION_BYP,
     MODULATION_RAW,
+#endif
+
+#ifdef ENABLE_CN_RF
+    MODULATION_AMB,
+    MODULATION_DSB,
+    MODULATION_CW,
+#ifdef ENABLE_WFM
+    MODULATION_WFM,
+#endif
 #endif
 
     MODULATION_UKNOWN
@@ -130,6 +142,10 @@ typedef struct VFO_Info_t
 
     uint8_t        Compander;
 
+#ifdef ENABLE_CN_RF
+    RF_Profile_t   RfProfile;
+#endif
+
     char           Name[16];
 } VFO_Info_t;
 
@@ -166,6 +182,9 @@ BK4819_FilterBandwidth_t RADIO_GetAMFilterBandwidth(const VFO_Info_t *pVfo);
 void     RADIO_SetTxParameters(void);
 void     RADIO_SetupAGC(bool listeningAM, bool disable);
 void     RADIO_SetModulation(ModulationMode_t modulation);
+#ifdef ENABLE_WFM
+bool     RADIO_IsWfmActive(void);
+#endif
 void     RADIO_SetVfoState(VfoState_t State);
 void     RADIO_PrepareTX(void);
 void     RADIO_SendCssTail(void);

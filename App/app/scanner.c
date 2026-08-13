@@ -403,6 +403,15 @@ void SCANNER_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
 void SCANNER_Start(bool singleFreq)
 {
+    RADIO_SelectVfos();
+#ifdef ENABLE_WFM
+    /* 快速扫频依赖 BK4829；WFM 使用 BK1080，不能复用同一扫描状态机。 */
+    if (gRxVfo->Modulation == MODULATION_WFM) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+#endif
+
     gScanSingleFrequency = singleFreq;
     gMonitor = false;
 
@@ -411,7 +420,6 @@ void SCANNER_Start(bool singleFreq)
 #endif
 
     BK4819_StopScan();
-    RADIO_SelectVfos();
 
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(gRxVfo->CHANNEL_SAVE))

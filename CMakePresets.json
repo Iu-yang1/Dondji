@@ -196,6 +196,26 @@
                 "EDITION_STRING": "Fusion",
                 "TARGET": "Dondji.fusion"
             }
+        },
+        {
+            "name": "CN_RF",
+            "inherits": "Fusion",
+            "cacheVariables": {
+                "ENABLE_CN_RF": true,
+                "ENABLE_FMRADIO": false,
+                "ENABLE_WFM": true,
+                "ENABLE_BYP_RAW_DEMODULATORS": true,
+                "ENABLE_AIRCOPY": true,
+                "ENABLE_DTMF_CALLING": false,
+                "ENABLE_TX_WHEN_AM": false,
+                "ENABLE_FEAT_F4HWN_SCREENSHOT": false,
+                "ENABLE_FEAT_F4HWN_GAME": false,
+                "ENABLE_FEAT_F4HWN_PMR": false,
+                "ENABLE_FEAT_F4HWN_GMRS_FRS_MURS": false,
+                "ENABLE_FEAT_F4HWN_CA": false,
+                "EDITION_STRING": "CN-RF",
+                "TARGET": "Dondji.cn-rf"
+            }
         }
     ],
     "buildPresets": [
@@ -226,6 +246,10 @@
         {
             "name": "Fusion",
             "configurePreset": "Fusion"
+        },
+        {
+            "name": "CN_RF",
+            "configurePreset": "CN_RF"
         }
     ]
 }

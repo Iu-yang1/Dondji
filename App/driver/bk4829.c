@@ -331,6 +331,49 @@ void BK4819_SetAGC(bool enable)
     // }
 }
 
+void BK4819_SetFilterBandwidthRaw(uint16_t value)
+{
+    BK4819_WriteRegister(BK4819_REG_43, value);
+}
+
+void BK4819_SetFixedRxGain(uint16_t value)
+{
+    BK4819_SetAGC(false);
+    BK4819_WriteRegister(BK4819_REG_13, value & 0x03FFu);
+}
+
+void BK4819_SetAfcLevel(uint8_t level)
+{
+    /*
+     * BK4819 V3 Application Note 明确定义 REG_73[13:11] 为 AFC 范围
+     * （000 最大、111 最小），REG_73[4] 为 AFC Disable。BK4829 当前驱动
+     * 使用同一已核对字段：0=关闭，1..8 从最小到最大，不改写压扩寄存器。
+     * https://www.scribd.com/document/716113950/BK4819-V3-Application-Note-20210428-machine-translated-English
+     */
+    uint16_t reg73 = BK4819_ReadRegister(BK4819_REG_73);
+    if (level == 0u) {
+        BK4819_WriteRegister(BK4819_REG_73, reg73 | (1u << 4));
+        return;
+    }
+    if (level > 8u)
+        level = 8u;
+    reg73 &= ~((7u << 11) | (1u << 4));
+    reg73 |= (uint16_t)(8u - level) << 11;
+    BK4819_WriteRegister(BK4819_REG_73, reg73);
+}
+
+void BK4819_SetMicGain(uint8_t value)
+{
+    const uint16_t reg = BK4819_ReadRegister(BK4819_REG_7D);
+    BK4819_WriteRegister(BK4819_REG_7D, (reg & ~0x003Fu) | (value & 0x3Fu));
+}
+
+void BK4819_SetTxDeviation(uint16_t value)
+{
+    const uint16_t reg = BK4819_ReadRegister(BK4819_REG_40);
+    BK4819_WriteRegister(BK4819_REG_40, (reg & 0xF000u) | (value & 0x0FFFu));
+}
+
 void BK4819_InitAGC(bool amModulation)
 {
 
@@ -1123,8 +1166,9 @@ void BK4819_Idle(void)
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
 void BK4819_EnterBypass(void)
 {
-    // Keep AF output on normal path (REG_47 mode 0x1 is documented on BK4829).
-    BK4819_SetAF(BK4819_AF_FM);
+    /* IJV 公开规格定义 BYP 行为；Apache-2.0 开源实现也将 REG_47 AF=9 标为 BYP：
+     * https://github.com/losehu/uv-k5-firmware-custom/blob/main/driver/bk4819.h */
+    BK4819_SetAF(BK4819_AF_UNKNOWN3);
 
     // Bypass all AF filters (Rx + Tx) as recommended for digital bypass mode.
     // REG_2B:

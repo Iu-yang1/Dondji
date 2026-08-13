@@ -33,7 +33,7 @@
     #include "app/menu.h"
 #endif
 #include "audio.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_BK1080
     #include "driver/bk1080.h"
 #endif
 #include "driver/bk4819.h"
@@ -285,10 +285,17 @@ void ACTION_SwitchDemodul(void)
 {
     gRequestSaveChannel = 1;
 
-    gTxVfo->Modulation++;
-
-    if(gTxVfo->Modulation == MODULATION_UKNOWN)
-        gTxVfo->Modulation = MODULATION_FM;
+    do {
+        gTxVfo->Modulation++;
+        if(gTxVfo->Modulation == MODULATION_UKNOWN)
+            gTxVfo->Modulation = MODULATION_FM;
+#ifdef ENABLE_WFM
+    } while (gTxVfo->Modulation == MODULATION_WFM &&
+             (gTxVfo->pRX->Frequency < 7600000u || gTxVfo->pRX->Frequency > 10800000u));
+#else
+    } while (false);
+#endif
+    gFlagReconfigureVfos = true;
 }
 
 
@@ -633,6 +640,17 @@ void ACTION_Wn(void)
     const bool isRx = FUNCTION_IsRx();
     VFO_Info_t *pVfo = isRx ? gRxVfo : gTxVfo;
 
+#ifdef ENABLE_CN_RF
+    pVfo->RfProfile.bandwidth = RF_PROFILE_IsWideBandwidth(pVfo->RfProfile.bandwidth)
+                                    ? RF_BW_N9 : RF_BW_W23;
+    pVfo->CHANNEL_BANDWIDTH = RF_PROFILE_IsWideBandwidth(pVfo->RfProfile.bandwidth)
+                                  ? BANDWIDTH_WIDE : BANDWIDTH_NARROW;
+    if (isRx)
+        RF_PROFILE_ApplyRx(pVfo);
+    if (pVfo == gTxVfo)
+        gRequestSaveChannel = 1;
+    return;
+#else
     pVfo->CHANNEL_BANDWIDTH = !pVfo->CHANNEL_BANDWIDTH;
 
     if (pVfo->Modulation == MODULATION_AM)
@@ -655,6 +673,7 @@ void ACTION_Wn(void)
     #else
         BK4819_SetFilterBandwidth(bw, false);
     #endif
+#endif
 }
 
 void ACTION_BackLight(void)
@@ -699,11 +718,18 @@ void ACTION_Mute(void)
     #ifdef ENABLE_FMRADIO
         BK1080_WriteRegister(BK1080_REG_05_SYSTEM_CONFIGURATION2, gMute ? 0x0A10 : 0x0A1F);
     #endif
+#ifdef ENABLE_WFM
+    if (RADIO_IsWfmActive())
+        BK1080_Mute(gMute);
+#endif
     
     if(gMute)
     {
         // Set audio output to mute mode for complete silence
-        BK4819_SetAF(BK4819_AF_MUTE);
+#ifdef ENABLE_WFM
+        if (!RADIO_IsWfmActive())
+#endif
+            BK4819_SetAF(BK4819_AF_MUTE);
         gEeprom.VOLUME_GAIN = 0;
     }
     else

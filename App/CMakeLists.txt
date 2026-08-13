@@ -121,11 +121,15 @@ endif()
 
 # ---- STOCK QUANSHENG FEATURES ----
 
+if(ENABLE_FMRADIO OR ENABLE_WFM)
+    target_compile_definitions(App INTERFACE ENABLE_BK1080)
+    target_sources(App INTERFACE driver/bk1080.c)
+endif()
 enable_feature(ENABLE_FMRADIO
-    driver/bk1080.c 
     app/fm.c 
     ui/fmradio.c
 )
+enable_feature(ENABLE_WFM)
 enable_feature(ENABLE_AIRCOPY
     app/aircopy.c 
     ui/aircopy.c
@@ -153,6 +157,9 @@ enable_feature(ENABLE_SPECTRUM
 enable_feature(ENABLE_BIG_FREQ)
 enable_feature(ENABLE_SMALL_BOLD)
 enable_feature(ENABLE_CHINESE)
+enable_feature(ENABLE_CN_RF
+    rf_profile.c
+)
 enable_feature(ENABLE_CUSTOM_MENU_LAYOUT)
 enable_feature(ENABLE_KEEP_MEM_NAME)
 enable_feature(ENABLE_WIDE_RX)

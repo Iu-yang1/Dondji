@@ -381,7 +381,27 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 
     // 0F40..0F47
     PY25Q16_ReadBuffer(0x00A150, Data, 8);
+#ifdef ENABLE_CN_RF
+    /*
+     * CN-RF 的首次启动和损坏设置回退在既有频率表覆盖范围内默认解锁。
+     * 已保存的有效 F Lock 选择保持不变，用户仍可在菜单中手动设回限制。
+     */
+    gSetting_F_LOCK            = (Data[0] < F_LOCK_LEN) ? Data[0] : F_LOCK_NONE;
+#else
     gSetting_F_LOCK            = (Data[0] < F_LOCK_LEN) ? Data[0] : F_LOCK_DEF;
+#endif
+#ifndef ENABLE_FEAT_F4HWN_CA
+    if (gSetting_F_LOCK == F_LOCK_CA)
+        gSetting_F_LOCK = F_LOCK_DEF;
+#endif
+#ifndef ENABLE_FEAT_F4HWN_PMR
+    if (gSetting_F_LOCK == F_LOCK_PMR)
+        gSetting_F_LOCK = F_LOCK_DEF;
+#endif
+#ifndef ENABLE_FEAT_F4HWN_GMRS_FRS_MURS
+    if (gSetting_F_LOCK == F_LOCK_GMRS_FRS_MURS)
+        gSetting_F_LOCK = F_LOCK_DEF;
+#endif
 #ifndef ENABLE_FEAT_F4HWN
     gSetting_350TX             = (Data[1] < 2) ? Data[1] : false;  // was true
 #endif
@@ -733,6 +753,18 @@ void SETTINGS_FactoryReset(bool bIsAll)
     if (bIsAll)
     {
         PY25Q16_SectorErase(0x00A000);
+
+#ifdef ENABLE_CN_RF
+        RF_PROFILE_ResetAll();
+        /*
+         * 全部恢复设置后立即留下 CN-RF 的默认 TX 频率锁，避免本次运行或
+         * 下次启动因擦除字节 0xFF 回退到地区限制；不触碰信道、名称、属性、
+         * 字库和校准区域。
+         */
+        const uint8_t defaultFrequencyLock = F_LOCK_NONE;
+        PY25Q16_WriteBuffer(0x00A150, &defaultFrequencyLock, sizeof(defaultFrequencyLock));
+        gSetting_F_LOCK = defaultFrequencyLock;
+#endif
     }
 
     // Prevent reset to restart in RO mode...
@@ -1166,6 +1198,11 @@ void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO,
 #ifdef ENABLE_NOAA
     if (IS_NOAA_CHANNEL(Channel))
         return;
+#endif
+
+#ifdef ENABLE_CN_RF
+    /* 高级字段独立保存；即使 Mode<2 也不能遗漏已有 MR 的菜单修改。 */
+    RF_PROFILE_Save(Channel, VFO, &pVFO->RfProfile);
 #endif
 
     // 0

@@ -404,6 +404,15 @@ static bool MENU_IsMenuInIconGroup(uint8_t menu_number_1based, uint8_t menu_id, 
         menu_id == MENU_SFT_D ||
         menu_id == MENU_OFFSET ||
         menu_id == MENU_W_N ||
+#ifdef ENABLE_CN_RF
+        menu_id == MENU_RF_AGC ||
+        menu_id == MENU_RF_GAIN ||
+        menu_id == MENU_RF_AFC ||
+        menu_id == MENU_SET_DEV ||
+        menu_id == MENU_RF_BOOST ||
+        menu_id == MENU_NOISE_BLANKER ||
+        menu_id == MENU_MIC ||
+#endif
         menu_id == MENU_BCL ||
         menu_id == MENU_COMPAND ||
         menu_id == MENU_AM ||
@@ -422,7 +431,9 @@ static bool MENU_IsMenuInIconGroup(uint8_t menu_number_1based, uint8_t menu_id, 
         menu_id == MENU_STE ||
         menu_id == MENU_RP_STE ||
         menu_id == MENU_BEEP ||
+#ifndef ENABLE_CN_RF
         menu_id == MENU_MIC ||
+#endif
         menu_id == MENU_F1SHRT ||
         menu_id == MENU_F1LONG ||
         menu_id == MENU_F2SHRT ||
@@ -488,6 +499,23 @@ static uint8_t MENU_GetIconOrderPriority(uint8_t icon_index, uint8_t menu_id)
         if (menu_id == MENU_SFT_D) return 6u;
         if (menu_id == MENU_OFFSET) return 7u;
         if (menu_id == MENU_W_N) return 8u;
+#ifdef ENABLE_CN_RF
+        if (menu_id == MENU_RF_AGC) return 9u;
+        if (menu_id == MENU_RF_GAIN) return 10u;
+        if (menu_id == MENU_RF_AFC) return 11u;
+        if (menu_id == MENU_SET_DEV) return 12u;
+        if (menu_id == MENU_RF_BOOST) return 13u;
+        if (menu_id == MENU_NOISE_BLANKER) return 14u;
+        if (menu_id == MENU_MIC) return 15u;
+        if (menu_id == MENU_BCL) return 16u;
+        if (menu_id == MENU_COMPAND) return 17u;
+        if (menu_id == MENU_AM) return 18u;
+        if (menu_id == MENU_LIST_CH) return 19u;
+        if (menu_id == MENU_MEM_CH) return 20u;
+        if (menu_id == MENU_DEL_CH) return 21u;
+        if (menu_id == MENU_MEM_NAME) return 22u;
+        if (menu_id == MENU_MDF) return 23u;
+#else
         if (menu_id == MENU_BCL) return 9u;
         if (menu_id == MENU_COMPAND) return 10u;
         if (menu_id == MENU_AM) return 11u;
@@ -496,6 +524,7 @@ static uint8_t MENU_GetIconOrderPriority(uint8_t icon_index, uint8_t menu_id)
         if (menu_id == MENU_DEL_CH) return 14u;
         if (menu_id == MENU_MEM_NAME) return 15u;
         if (menu_id == MENU_MDF) return 16u;
+#endif
     }
 
     if (icon_index == 1u)
@@ -777,7 +806,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
         case MENU_F_LOCK:
             //*pMin = 0;
-            *pMax = ARRAY_SIZE(gSubMenu_F_LOCK) - 1;
+            *pMax = gSubMenu_F_LOCK_COUNT - 1;
             break;
 
         case MENU_MDF:
@@ -845,8 +874,21 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
         case MENU_W_N:
             //*pMin = 0;
+#ifdef ENABLE_CN_RF
+            *pMax = RF_BW_COUNT - 1;
+#else
             *pMax = ARRAY_SIZE(gSubMenu_W_N) - 1;
+#endif
             break;
+
+#ifdef ENABLE_CN_RF
+        case MENU_RF_AGC:   *pMax = RF_AGC_COUNT - 1; break;
+        case MENU_RF_GAIN:  *pMax = 15; break;
+        case MENU_RF_AFC:   *pMax = 8; break;
+        case MENU_RF_BOOST: *pMax = 1; break;
+        case MENU_SET_DEV:  *pMax = 9; break;
+        case MENU_NOISE_BLANKER: *pMax = 3; break;
+#endif
 
         case MENU_VOL:
 #ifdef ENABLE_FEAT_F4HWN
@@ -1099,9 +1141,13 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
             //*pMin = 0;
-            if(gTxVfo->Modulation == MODULATION_AM)
+            if(gTxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+               || gTxVfo->Modulation == MODULATION_AMB
+#endif
+            )
                 *pMax = ARRAY_SIZE(gSubMenu_SET_AUD_AM) - 1;
-            else if (gTxVfo->Modulation == MODULATION_USB)
+            else if (gTxVfo->Modulation != MODULATION_FM)
                 *pMax = 0;
             else
                 *pMax = ARRAY_SIZE(gSubMenu_SET_AUD_FM) - 1;
@@ -1228,9 +1274,51 @@ void MENU_AcceptSetting(void)
             return;
 
         case MENU_W_N:
+#ifdef ENABLE_CN_RF
+            gTxVfo->RfProfile.bandwidth = gRfBandwidthMenuValues[gSubMenuSelection];
+            gTxVfo->CHANNEL_BANDWIDTH = RF_PROFILE_IsWideBandwidth(gTxVfo->RfProfile.bandwidth)
+                                             ? BANDWIDTH_WIDE : BANDWIDTH_NARROW;
+            gFlagReconfigureVfos = true;
+#else
             gTxVfo->CHANNEL_BANDWIDTH = gSubMenuSelection;
+#endif
             gRequestSaveChannel       = 1;
             return;
+
+#ifdef ENABLE_CN_RF
+        case MENU_RF_AGC:
+            gTxVfo->RfProfile.agc = gSubMenuSelection;
+            gFlagReconfigureVfos = true;
+            gRequestSaveChannel = 1;
+            return;
+        case MENU_RF_GAIN:
+            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
+                return;
+            gTxVfo->RfProfile.rfGain = gSubMenuSelection;
+            gFlagReconfigureVfos = true;
+            gRequestSaveChannel = 1;
+            return;
+        case MENU_RF_AFC:
+            gTxVfo->RfProfile.afc = gSubMenuSelection;
+            gFlagReconfigureVfos = true;
+            gRequestSaveChannel = 1;
+            return;
+        case MENU_SET_DEV:
+            gTxVfo->RfProfile.deviation = gSubMenuSelection;
+            gRequestSaveChannel = 1;
+            return;
+        case MENU_RF_BOOST:
+            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
+                return;
+            gTxVfo->RfProfile.rfBoost = gSubMenuSelection;
+            gFlagReconfigureVfos = true;
+            gRequestSaveChannel = 1;
+            return;
+        case MENU_NOISE_BLANKER:
+            gTxVfo->RfProfile.noiseBlanker = gSubMenuSelection;
+            gRequestSaveChannel = 1;
+            return;
+#endif
 
 #ifndef ENABLE_FEAT_F4HWN
         case MENU_SCR:
@@ -1370,8 +1458,13 @@ void MENU_AcceptSetting(void)
             break;
 
         case MENU_MIC:
+#ifdef ENABLE_CN_RF
+            gTxVfo->RfProfile.micGain = gSubMenuSelection;
+            gRequestSaveChannel = 1;
+#else
             gEeprom.MIC_SENSITIVITY = gSubMenuSelection;
             SETTINGS_LoadCalibration();
+#endif
             gFlagReconfigureVfos = true;
             break;
 
@@ -1500,7 +1593,13 @@ void MENU_AcceptSetting(void)
             break;
 
         case MENU_AM:
+#ifdef ENABLE_WFM
+            if (gSubMenuSelection == MODULATION_WFM &&
+                (gTxVfo->pRX->Frequency < 7600000u || gTxVfo->pRX->Frequency > 10800000u))
+                return;
+#endif
             gTxVfo->Modulation     = gSubMenuSelection;
+            gFlagReconfigureVfos = true;
             gRequestSaveChannel = 1;
             return;
 
@@ -1538,7 +1637,8 @@ void MENU_AcceptSetting(void)
 #endif
 
         case MENU_F_LOCK: {
-            if(gSubMenuSelection == F_LOCK_NONE) { // select 10 times to enable
+            const uint8_t selectedLock = gSubMenu_F_LOCK_VALUES[gSubMenuSelection];
+            if(selectedLock == F_LOCK_NONE) { // select 10 times to enable
                 gUnlockAllTxConfCnt++;
 #ifdef ENABLE_FEAT_F4HWN
                 if(gUnlockAllTxConfCnt < 3)
@@ -1550,7 +1650,7 @@ void MENU_AcceptSetting(void)
             else
                 gUnlockAllTxConfCnt = 0;
 
-            gSetting_F_LOCK = gSubMenuSelection;
+            gSetting_F_LOCK = selectedLock;
 
             #ifdef ENABLE_FEAT_F4HWN
             if(gSetting_F_LOCK == F_LOCK_ALL) {
@@ -1667,7 +1767,11 @@ void MENU_AcceptSetting(void)
             break;
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
-            if(gTxVfo->Modulation == MODULATION_AM)
+            if(gTxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+               || gTxVfo->Modulation == MODULATION_AMB
+#endif
+            )
                 gSetting_set_audio_am = gSubMenuSelection;
             else if (gTxVfo->Modulation == MODULATION_FM)
                 gSetting_set_audio_fm = gSubMenuSelection;
@@ -1808,8 +1912,21 @@ void MENU_ShowCurrentSetting(void)
             break;
 
         case MENU_W_N:
+#ifdef ENABLE_CN_RF
+            gSubMenuSelection = RF_PROFILE_BandwidthToMenu(gTxVfo->RfProfile.bandwidth);
+#else
             gSubMenuSelection = gTxVfo->CHANNEL_BANDWIDTH;
+#endif
             break;
+
+#ifdef ENABLE_CN_RF
+        case MENU_RF_AGC:   gSubMenuSelection = gTxVfo->RfProfile.agc; break;
+        case MENU_RF_GAIN:  gSubMenuSelection = gTxVfo->RfProfile.rfGain; break;
+        case MENU_RF_AFC:   gSubMenuSelection = gTxVfo->RfProfile.afc; break;
+        case MENU_SET_DEV:  gSubMenuSelection = gTxVfo->RfProfile.deviation; break;
+        case MENU_RF_BOOST: gSubMenuSelection = gTxVfo->RfProfile.rfBoost; break;
+        case MENU_NOISE_BLANKER: gSubMenuSelection = gTxVfo->RfProfile.noiseBlanker; break;
+#endif
 
         case MENU_VOL:
             gSubMenuSelection = 0;
@@ -1913,7 +2030,11 @@ void MENU_ShowCurrentSetting(void)
             break;
 
         case MENU_MIC:
+#ifdef ENABLE_CN_RF
+            gSubMenuSelection = gTxVfo->RfProfile.micGain;
+#else
             gSubMenuSelection = gEeprom.MIC_SENSITIVITY;
+#endif
             break;
 
 #ifdef ENABLE_AUDIO_BAR
@@ -2045,7 +2166,13 @@ void MENU_ShowCurrentSetting(void)
 #endif
 
         case MENU_F_LOCK:
-            gSubMenuSelection = gSetting_F_LOCK;
+            gSubMenuSelection = 0;
+            for (uint8_t i = 0; i < gSubMenu_F_LOCK_COUNT; i++) {
+                if (gSubMenu_F_LOCK_VALUES[i] == gSetting_F_LOCK) {
+                    gSubMenuSelection = i;
+                    break;
+                }
+            }
             break;
 
 #ifndef ENABLE_FEAT_F4HWN
@@ -2157,9 +2284,13 @@ void MENU_ShowCurrentSetting(void)
             break;
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
         case MENU_SET_AUD:
-            if(gTxVfo->Modulation == MODULATION_AM)
+            if(gTxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+               || gTxVfo->Modulation == MODULATION_AMB
+#endif
+            )
                 gSubMenuSelection = gSetting_set_audio_am;
-            else if (gTxVfo->Modulation == MODULATION_USB)
+            else if (gTxVfo->Modulation != MODULATION_FM)
                 gSubMenuSelection = 0;
             else
                 gSubMenuSelection = gSetting_set_audio_fm;

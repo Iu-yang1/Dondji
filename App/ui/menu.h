@@ -62,6 +62,14 @@ enum
     MENU_OFFSET,
     MENU_TOT,
     MENU_W_N,
+#ifdef ENABLE_CN_RF
+    MENU_RF_AGC,
+    MENU_RF_GAIN,
+    MENU_RF_AFC,
+    MENU_SET_DEV,
+    MENU_RF_BOOST,
+    MENU_NOISE_BLANKER,
+#endif
 #ifndef ENABLE_FEAT_F4HWN
     MENU_SCR,
 #endif
@@ -241,7 +249,9 @@ extern const char* const gSubMenu_PTT_ID[5];
 extern const char        gSubMenu_PONMSG[3][8];
 extern const char        gSubMenu_ROGER[3][6];
 extern const char        gSubMenu_RESET[2][4];
-extern const char* const gSubMenu_F_LOCK[F_LOCK_LEN];
+extern const char* const gSubMenu_F_LOCK[];
+extern const uint8_t     gSubMenu_F_LOCK_VALUES[];
+extern const uint8_t     gSubMenu_F_LOCK_COUNT;
 extern const char        gSubMenu_RX_TX[4][6];
 extern const char        gSubMenu_BAT_TXT[3][8];
 extern const char        gSubMenu_LANGUAGE[2][8];

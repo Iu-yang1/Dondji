@@ -289,13 +289,21 @@ const char gSubMenu_ABR_ON_CN[] = "\xe5\xbc\x80";
 const char gSubMenu_MEM_NONE_CN[] = "\xe6\x97\xa0";
 
 /* Same order as ModulationMode_t / gModulationStr (size MODULATION_UKNOWN). */
-const char gSubMenu_MODULATION_CN[][8] = {
-    "FM",
-    "AM",
-    "USB",
+const char gSubMenu_MODULATION_CN[][13] = {
+    "\xe8\xb0\x83\xe9\xa2\x91",             /* 调频 */
+    "\xe8\xb0\x83\xe5\xb9\x85",             /* 调幅 */
+    "\xe4\xb8\x8a\xe8\xbe\xb9\xe5\xb8\xa6", /* 上边带 */
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
-    "BYP",
-    "RAW",
+    "\xe6\x97\x81\xe8\xb7\xaf",             /* 旁路 */
+    "\xe5\x8e\x9f\xe5\xa7\x8b",             /* 原始 */
+#endif
+#ifdef ENABLE_CN_RF
+    "\xe5\xb9\xbf\xe6\x92\xad\xe8\xb0\x83\xe5\xb9\x85", /* 广播调幅 */
+    "\xe5\x8f\x8c\xe8\xbe\xb9\xe5\xb8\xa6", /* 双边带 */
+    "\xe7\x94\xb5\xe6\x8a\xa5",             /* 电报 */
+#ifdef ENABLE_WFM
+    "\xe5\xae\xbd\xe5\xb8\xa6\xe8\xb0\x83\xe9\xa2\x91", /* 宽带调频 */
+#endif
 #endif
 };
 

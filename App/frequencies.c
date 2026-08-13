@@ -263,7 +263,9 @@ int32_t TX_freq_check(const uint32_t Frequency)
 
         case F_LOCK_NONE:
             for (uint32_t i = 0; i < ARRAY_SIZE(frequencyBandTable); i++)
-                if (Frequency >= frequencyBandTable[i].lower && Frequency < frequencyBandTable[i].upper)
+                /* RX_freq_check 已排除 BK4829 的 VCO 空洞；包含表中明确给出的
+                 * 上边界，但绝不越过 frequencyBandTable。 */
+                if (Frequency >= frequencyBandTable[i].lower && Frequency <= frequencyBandTable[i].upper)
                     return 0;
             break;
     }

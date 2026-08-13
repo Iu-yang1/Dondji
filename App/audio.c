@@ -19,7 +19,7 @@
     #include "app/fm.h"
 #endif
 #include "audio.h"
-#ifdef ENABLE_FMRADIO
+#ifdef ENABLE_BK1080
     #include "driver/bk1080.h"
 #endif
 #include "driver/bk4819.h"
@@ -30,6 +30,9 @@
 #include "driver/py25q16.h"
 #include "functions.h"
 #include "misc.h"
+#ifdef ENABLE_WFM
+    #include "radio.h"
+#endif
 #include "settings.h"
 #include "ui/ui.h"
 
@@ -69,6 +72,10 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 
 #ifdef ENABLE_FMRADIO
     if (gFmRadioMode)
+        BK1080_Mute(true);
+#endif
+#ifdef ENABLE_WFM
+    if (RADIO_IsWfmActive())
         BK1080_Mute(true);
 #endif
 
@@ -186,6 +193,12 @@ void AUDIO_PlayBeep(BEEP_Type_t Beep)
 #endif
 
 
+/* 提示音临时使用 BK4829；WFM 返回时必须重新睡眠 BK4829 并恢复 BK1080。 */
+#ifdef ENABLE_WFM
+    if (RADIO_IsWfmActive())
+        RADIO_SetModulation(gRxVfo->Modulation);
+    else
+#endif
     if (gEnableSpeaker)
         AUDIO_AudioPathOn();
 
@@ -345,6 +358,10 @@ void AUDIO_PlaySingleVoice(bool bFlag)
 
         #ifdef ENABLE_FMRADIO
             if (gFmRadioMode)
+                BK1080_Mute(true);
+        #endif
+        #ifdef ENABLE_WFM
+            if (RADIO_IsWfmActive())
                 BK1080_Mute(true);
         #endif
 

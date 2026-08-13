@@ -628,6 +628,10 @@ static void DualwatchAlternate(void)
 
 static void CheckRadioInterrupts(void)
 {
+#ifdef ENABLE_WFM
+    if (RADIO_IsWfmActive())
+        return;
+#endif
     if (SCANNER_IsScanning())
         return;
 
@@ -1086,6 +1090,10 @@ void APP_Update(void)
 #ifdef ENABLE_FMRADIO
         && !gFmRadioMode
 #endif
+#ifdef ENABLE_WFM
+        && gEeprom.VfoInfo[0].Modulation != MODULATION_WFM
+        && gEeprom.VfoInfo[1].Modulation != MODULATION_WFM
+#endif
 #ifdef ENABLE_DTMF_CALLING
         && gDTMF_CallState == DTMF_CALL_STATE_NONE
 #endif
@@ -1124,6 +1132,14 @@ void APP_Update(void)
             || gScreenToDisplay != DISPLAY_MAIN
 #ifdef ENABLE_FMRADIO
             || gFmRadioMode
+#endif
+#ifdef ENABLE_WFM
+            || RADIO_IsWfmActive()
+#endif
+#ifdef ENABLE_CN_RF
+            /* DSB/CW 是零中频直通监听，音频需保持开启，不能进入周期睡眠。 */
+            || gRxVfo->Modulation == MODULATION_DSB
+            || gRxVfo->Modulation == MODULATION_CW
 #endif
 #ifdef ENABLE_DTMF_CALLING
             || gDTMF_CallState != DTMF_CALL_STATE_NONE
@@ -1384,6 +1400,10 @@ void APP_TimeSlice10ms(void)
 
     gFlashLightBlinkCounter++;
 
+#ifdef ENABLE_CN_RF
+    RF_PROFILE_TimeSlice10ms();
+#endif
+
 #ifdef ENABLE_AM_FIX
     if (gRxVfo->Modulation == MODULATION_AM) {
         AM_fix_10ms(gEeprom.RX_VFO);
@@ -1603,7 +1623,12 @@ void APP_TimeSlice500ms(void)
         if (--gKeyInputCountdown == 0)
         {
 
-            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) && (gInputBoxIndex > 0 && gInputBoxIndex < 4) && (!gFmRadioMode))
+            if (IS_MR_CHANNEL(gTxVfo->CHANNEL_SAVE) &&
+                (gInputBoxIndex > 0 && gInputBoxIndex < 4)
+#ifdef ENABLE_FMRADIO
+                && !gFmRadioMode
+#endif
+            )
             {
                 channelMoveSwitch();
 

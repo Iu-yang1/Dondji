@@ -23,6 +23,14 @@ const char *UI_MENU_GetMenuTitle(const t_menu_item *item)
     case MENU_SFT_D:        return "频差方向";
     case MENU_OFFSET:       return "频差频率";
     case MENU_W_N:          return "\xe5\xae\xbd\xe7\xaa\x84\xe5\xb8\xa6";
+#ifdef ENABLE_CN_RF
+    case MENU_RF_AGC:       return "AGC\xe6\xa8\xa1\xe5\xbc\x8f";
+    case MENU_RF_GAIN:      return "\xe5\xb0\x84\xe9\xa2\x91\xe5\xa2\x9e\xe7\x9b\x8a";
+    case MENU_RF_AFC:       return "\xe8\x87\xaa\xe5\x8a\xa8\xe9\xa2\x91\xe6\x8e\xa7";
+    case MENU_SET_DEV:      return "\xe5\x8f\x91\xe5\xb0\x84\xe9\xa2\x91\xe5\x81\x8f";
+    case MENU_RF_BOOST:    return "\xe5\xb0\x84\xe9\xa2\x91\xe5\xa2\x9e\xe5\xbc\xba";
+    case MENU_NOISE_BLANKER:return "\xe5\x99\xaa\xe5\xa3\xb0\xe6\xb6\x88\xe9\x9a\x90";
+#endif
 #ifndef ENABLE_FEAT_F4HWN
     case MENU_SCR:          return "\xe5\x8a\xa0\xe5\xaf\x86";
 #endif

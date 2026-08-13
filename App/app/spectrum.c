@@ -890,14 +890,16 @@ static void UpdateFreqChangeStep(bool inc)
 
 static void ToggleModulation()
 {
-    if (settings.modulationType < MODULATION_UKNOWN - 1)
-    {
+    do {
+        if (settings.modulationType < MODULATION_UKNOWN - 1)
         settings.modulationType++;
-    }
-    else
-    {
+        else
         settings.modulationType = MODULATION_FM;
-    }
+#ifdef ENABLE_WFM
+    } while (settings.modulationType == MODULATION_WFM);
+#else
+    } while (false);
+#endif
     RADIO_SetModulation(settings.modulationType);
 
     RelaunchScan();
@@ -2512,7 +2514,12 @@ void APP_RunSpectrum()
     newScanStart = true;
 
     ToggleRX(true), ToggleRX(false); // hack to prevent noise when squelch off
-    RADIO_SetModulation(settings.modulationType = gTxVfo->Modulation);
+    settings.modulationType = gTxVfo->Modulation;
+#ifdef ENABLE_WFM
+    if (settings.modulationType == MODULATION_WFM)
+        settings.modulationType = MODULATION_FM;
+#endif
+    RADIO_SetModulation(settings.modulationType);
 
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
     BK4819_SetFilterBandwidth(settings.listenBw, false);

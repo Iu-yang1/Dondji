@@ -36,24 +36,20 @@ enum POWER_OnDisplayMode_t {
 typedef enum POWER_OnDisplayMode_t POWER_OnDisplayMode_t;
 
 enum TxLockModes_t {
-    F_LOCK_DEF, //all default frequencies + configurable
-    F_LOCK_FCC,
-#ifdef ENABLE_FEAT_F4HWN_CA
-    F_LOCK_CA,
-#endif
-    F_LOCK_CE,
-    F_LOCK_GB,
-    F_LOCK_430,
-    F_LOCK_438,
-#ifdef ENABLE_FEAT_F4HWN_PMR
-    F_LOCK_PMR,
-#endif
-#ifdef ENABLE_FEAT_F4HWN_GMRS_FRS_MURS
-    F_LOCK_GMRS_FRS_MURS,
-#endif
-    F_LOCK_ALL, // disable TX on all frequencies
-    F_LOCK_NONE, // enable TX on all frequencies
-    F_LOCK_LEN
+    /* 这些值写入外置 Flash，必须跨预设保持稳定；关闭的地区项只从菜单和
+     * TX 检查代码中移除，不能让后续值重新编号。 */
+    F_LOCK_DEF            = 0,  // all default frequencies + configurable
+    F_LOCK_FCC            = 1,
+    F_LOCK_CA             = 2,
+    F_LOCK_CE             = 3,
+    F_LOCK_GB             = 4,
+    F_LOCK_430            = 5,
+    F_LOCK_438            = 6,
+    F_LOCK_PMR            = 7,
+    F_LOCK_GMRS_FRS_MURS  = 8,
+    F_LOCK_ALL            = 9,  // disable TX on all frequencies
+    F_LOCK_NONE           = 10, // enable TX on all frequencies
+    F_LOCK_LEN            = 11
 };
 
 /*

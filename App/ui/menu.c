@@ -370,7 +370,19 @@ const t_menu_item MenuList[] =
     {"TxCTCS",      MENU_T_CTCS        }, // was "T_CTCS"
     {"TxODir",      MENU_SFT_D         }, // was "SFT_D"
     {"TxOffs",      MENU_OFFSET        }, // was "OFFSET"
+#ifdef ENABLE_CN_RF
+    {"BW",          MENU_W_N           },
+#else
     {"W/N",         MENU_W_N           },
+#endif
+#ifdef ENABLE_CN_RF
+    {"AGC",         MENU_RF_AGC        },
+    {"RF Gain",     MENU_RF_GAIN       },
+    {"AFC",         MENU_RF_AFC        },
+    {"SetDEV",      MENU_SET_DEV       },
+    {"RF Boost",    MENU_RF_BOOST      },
+    {"NoiseB",      MENU_NOISE_BLANKER },
+#endif
 #ifndef ENABLE_FEAT_F4HWN
     {"Scramb",      MENU_SCR           }, // was "SCR"
 #endif
@@ -662,6 +674,33 @@ const char * const gSubMenu_F_LOCK[] =
     "DISABLE\nALL",
     "UNLOCK\nALL",
 };
+
+/* 菜单索引与持久化 F_LOCK 编号分离，关闭地区项时不改变 Flash 语义。 */
+const uint8_t gSubMenu_F_LOCK_VALUES[] =
+{
+    F_LOCK_DEF,
+    F_LOCK_FCC,
+#ifdef ENABLE_FEAT_F4HWN_CA
+    F_LOCK_CA,
+#endif
+    F_LOCK_CE,
+    F_LOCK_GB,
+    F_LOCK_430,
+    F_LOCK_438,
+#ifdef ENABLE_FEAT_F4HWN_PMR
+    F_LOCK_PMR,
+#endif
+#ifdef ENABLE_FEAT_F4HWN_GMRS_FRS_MURS
+    F_LOCK_GMRS_FRS_MURS,
+#endif
+    F_LOCK_ALL,
+    F_LOCK_NONE,
+};
+
+const uint8_t gSubMenu_F_LOCK_COUNT = ARRAY_SIZE(gSubMenu_F_LOCK_VALUES);
+
+_Static_assert(ARRAY_SIZE(gSubMenu_F_LOCK) == ARRAY_SIZE(gSubMenu_F_LOCK_VALUES),
+               "F Lock 菜单和持久化值映射数量不一致");
 
 const char gSubMenu_RX_TX[][6] =
 {
@@ -2083,7 +2122,44 @@ void UI_DisplayMenu(void)
             break;
 
         case MENU_W_N:
+#ifdef ENABLE_CN_RF
+            strcpy(String, gRfBandwidthNames[gRfBandwidthMenuValues[gSubMenuSelection]]);
+#else
             strcpy(String, SUBV(gSubMenu_W_N[gSubMenuSelection], gSubMenu_W_N_CN[gSubMenuSelection]));
+#endif
+            break;
+
+#ifdef ENABLE_CN_RF
+        case MENU_RF_AGC:
+            strcpy(String, gRfAgcNames[gSubMenuSelection]);
+            break;
+        case MENU_RF_GAIN:
+            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
+                strcpy(String, SUBV("N/A (AUTO)", "\xe8\x87\xaa\xe5\x8a\xa8\xe6\x97\xa0\xe6\x95\x88"));
+            else
+                sprintf(String, "%u", (unsigned)gSubMenuSelection);
+            break;
+        case MENU_RF_AFC:
+            if (gSubMenuSelection == 0)
+                strcpy(String, SUBV(gSubMenu_OFF_ON[0], gSubMenu_OFF_ON_CN[0]));
+            else
+                sprintf(String, "AFC-%u", (unsigned)gSubMenuSelection);
+            break;
+        case MENU_RF_BOOST:
+            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
+                strcpy(String, SUBV("N/A (AUTO)", "\xe8\x87\xaa\xe5\x8a\xa8\xe6\x97\xa0\xe6\x95\x88"));
+            else
+                strcpy(String, SUBV(gSubMenu_OFF_ON[gSubMenuSelection], gSubMenu_OFF_ON_CN[gSubMenuSelection]));
+            break;
+        case MENU_SET_DEV:
+            sprintf(String, "DEV-%u", (unsigned)gSubMenuSelection);
+            break;
+        case MENU_NOISE_BLANKER:
+            if (gSubMenuSelection == 0)
+                strcpy(String, SUBV(gSubMenu_OFF_ON[0], gSubMenu_OFF_ON_CN[0]));
+            else
+                sprintf(String, "NB-%u", (unsigned)gSubMenuSelection);
+#endif
             break;
 
 #ifndef ENABLE_FEAT_F4HWN
@@ -3350,13 +3426,17 @@ void UI_DisplayMenu(void)
 
         #ifdef ENABLE_FEAT_F4HWN_AUDIO
             case MENU_SET_AUD:
-                if(gTxVfo->Modulation == MODULATION_AM) {
+                if(gTxVfo->Modulation == MODULATION_AM
+#ifdef ENABLE_CN_RF
+                   || gTxVfo->Modulation == MODULATION_AMB
+#endif
+                ) {
                     strcpy(String, SUBV(gSubMenu_SET_AUD_AM[gSubMenuSelection], gSubMenu_SET_AUD_AM_CN[gSubMenuSelection]));
                     UI_PrintStringSmallNormal("AM", 114, 0, MENU_VALUE_ROW(0));
                 }
-                else if (gTxVfo->Modulation == MODULATION_USB) {
-                    strcpy(String, "USB");
-                    UI_PrintStringSmallNormal("USB", 108, 0, MENU_VALUE_ROW(0));
+                else if (gTxVfo->Modulation != MODULATION_FM) {
+                    strcpy(String, gModulationStr[gTxVfo->Modulation]);
+                    UI_PrintStringSmallNormal(gModulationStr[gTxVfo->Modulation], 108, 0, MENU_VALUE_ROW(0));
                 }
                 else {
                     strcpy(String, SUBV(gSubMenu_SET_AUD_FM[gSubMenuSelection], gSubMenu_SET_AUD_FM_CN[gSubMenuSelection]));

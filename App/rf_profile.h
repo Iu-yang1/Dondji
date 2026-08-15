@@ -55,6 +55,7 @@ void RF_PROFILE_Load(uint16_t channel, uint8_t vfo, RF_Profile_t *profile,
                      uint8_t legacyBandwidth, uint8_t micGain);
 void RF_PROFILE_Save(uint16_t channel, uint8_t vfo, const RF_Profile_t *profile);
 void RF_PROFILE_ResetAll(void);
+void RF_PROFILE_SetModeDefault(struct VFO_Info_t *vfo);
 void RF_PROFILE_ApplyRx(const struct VFO_Info_t *vfo);
 void RF_PROFILE_ApplyTx(const struct VFO_Info_t *vfo);
 void RF_PROFILE_TimeSlice10ms(void);

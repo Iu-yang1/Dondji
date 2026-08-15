@@ -159,6 +159,7 @@ enable_feature(ENABLE_SMALL_BOLD)
 enable_feature(ENABLE_CHINESE)
 enable_feature(ENABLE_CN_RF
     rf_profile.c
+    app/cw_keyer.c
 )
 enable_feature(ENABLE_CUSTOM_MENU_LAYOUT)
 enable_feature(ENABLE_KEEP_MEM_NAME)

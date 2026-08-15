@@ -41,6 +41,9 @@
 #include "app/chFrScanner.h"
 #include "app/dtmf.h"
 #include "app/mdc1200.h"
+#ifdef ENABLE_CN_RF
+    #include "app/cw_keyer.h"
+#endif
 #ifdef ENABLE_AM_FIX
     #include "am_fix.h"
 #endif
@@ -2417,6 +2420,12 @@ void UI_MAIN_TimeSlice500ms(void)
 
 void UI_DisplayMain(void)
 {
+#ifdef ENABLE_CN_RF
+    if (CW_KEYER_IsOpen()) {
+        CW_KEYER_Display();
+        return;
+    }
+#endif
     char               String[22];
     const unsigned int activeTxVFO = gRxVfoIsActive ? gEeprom.RX_VFO : gEeprom.TX_VFO;
 

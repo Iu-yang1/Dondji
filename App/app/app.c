@@ -26,6 +26,9 @@
 #endif
 #include "app/app.h"
 #include "app/chFrScanner.h"
+#ifdef ENABLE_CN_RF
+    #include "app/cw_keyer.h"
+#endif
 #include "app/dtmf.h"
 #ifdef ENABLE_FLASHLIGHT
     #include "app/flashlight.h"
@@ -1404,6 +1407,7 @@ void APP_TimeSlice10ms(void)
 
 #ifdef ENABLE_CN_RF
     RF_PROFILE_TimeSlice10ms();
+    CW_KEYER_TimeSlice10ms();
 #endif
 
 #ifdef ENABLE_AM_FIX
@@ -2172,6 +2176,12 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     if (bFlag) {
         goto Skip;
     }
+
+#ifdef ENABLE_CN_RF
+    /* 键控器是 MAIN 页覆盖层；必须先截获，避免发射中的数字键走 DTMF 路径。 */
+    if (CW_KEYER_IsOpen() && CW_KEYER_HandleKey(Key, bKeyPressed, bKeyHeld))
+        goto Skip;
+#endif
 
     if (gCurrentFunction == FUNCTION_TRANSMIT) {
 #if defined(ENABLE_ALARM) || defined(ENABLE_TX1750)

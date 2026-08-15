@@ -20,6 +20,9 @@
 #include "app/app.h"
 #include "app/chFrScanner.h"
 #include "app/common.h"
+#ifdef ENABLE_CN_RF
+    #include "app/cw_keyer.h"
+#endif
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
@@ -700,6 +703,12 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
 
     if(Key == 8)
     {
+#ifdef ENABLE_CN_RF
+        if (gTxVfo->Modulation == MODULATION_CW) {
+            CW_KEYER_Open();
+            return;
+        }
+#endif
         ACTION_BackLightOnDemand();
         return;
     }

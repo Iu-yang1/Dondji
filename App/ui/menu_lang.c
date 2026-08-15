@@ -22,7 +22,7 @@ const char *UI_MENU_GetMenuTitle(const t_menu_item *item)
     case MENU_T_CTCS:       return "发射模拟亚音";
     case MENU_SFT_D:        return "频差方向";
     case MENU_OFFSET:       return "频差频率";
-    case MENU_W_N:          return "\xe5\xae\xbd\xe7\xaa\x84\xe5\xb8\xa6";
+    case MENU_W_N:          return "\xe5\xb8\xa6\xe5\xae\xbd";
 #ifdef ENABLE_CN_RF
     case MENU_RF_AGC:       return "AGC\xe6\xa8\xa1\xe5\xbc\x8f";
     case MENU_RF_GAIN:      return "\xe5\xb0\x84\xe9\xa2\x91\xe5\xa2\x9e\xe7\x9b\x8a";

@@ -169,6 +169,31 @@ void RF_PROFILE_SetDefaults(RF_Profile_t *p, uint8_t legacyBandwidth, uint8_t mi
     p->noiseBlanker = 0;
 }
 
+void RF_PROFILE_SetModeDefault(VFO_Info_t *vfo)
+{
+    uint8_t bandwidth;
+
+    /* 仅在用户主动切换模式时调用；不干预之后由带宽菜单作出的选择。 */
+    switch (vfo->Modulation) {
+    case MODULATION_USB:
+    case MODULATION_LSB:
+    case MODULATION_DSB:
+        bandwidth = RF_BW_N9;
+        break;
+    case MODULATION_CW:
+        bandwidth = RF_BW_U6;
+        break;
+    case MODULATION_AM:
+        bandwidth = RF_BW_W12;
+        break;
+    default:
+        return;
+    }
+
+    vfo->RfProfile.bandwidth = bandwidth;
+    vfo->CHANNEL_BANDWIDTH = RF_PROFILE_IsWideBandwidth(bandwidth) ? BANDWIDTH_WIDE : BANDWIDTH_NARROW;
+}
+
 void RF_PROFILE_ResetAll(void)
 {
     PY25Q16_SectorErase(RF_PROFILE_FLASH_BASE);

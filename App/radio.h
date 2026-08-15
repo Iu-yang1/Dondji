@@ -185,6 +185,10 @@ void     RADIO_SetTxParameters(void);
 void     RADIO_SetupAGC(bool listeningAM, bool disable);
 void     RADIO_SetModulation(ModulationMode_t modulation);
 #ifdef ENABLE_WFM
+#define WFM_FREQUENCY_MIN      7600000u
+#define WFM_FREQUENCY_MAX     10800000u
+#define WFM_DEFAULT_FREQUENCY  8750000u
+bool     RADIO_IsWfmFrequency(uint32_t frequency);
 bool     RADIO_IsWfmActive(void);
 #endif
 void     RADIO_SetVfoState(VfoState_t State);

@@ -371,7 +371,7 @@ const t_menu_item MenuList[] =
     {"TxODir",      MENU_SFT_D         }, // was "SFT_D"
     {"TxOffs",      MENU_OFFSET        }, // was "OFFSET"
 #ifdef ENABLE_CN_RF
-    {"BW",          MENU_W_N           },
+    {"Bandwidth",   MENU_W_N           },
 #else
     {"W/N",         MENU_W_N           },
 #endif
@@ -883,7 +883,7 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
     {"RX MODE",         ACTION_OPT_RXMODE},
     {"MAIN ONLY",       ACTION_OPT_MAINONLY},
     {"PTT",             ACTION_OPT_PTT},
-    {"WIDE\nNARROW",    ACTION_OPT_WN},
+    {"BAND\nWIDTH",     ACTION_OPT_WN},
     {"MUTE",            ACTION_OPT_MUTE},
     #ifdef ENABLE_FEAT_F4HWN_AUDIO
         {"RxA",            ACTION_OPT_RXA},
@@ -2123,6 +2123,12 @@ void UI_DisplayMenu(void)
 
         case MENU_W_N:
 #ifdef ENABLE_CN_RF
+#ifdef ENABLE_WFM
+            if (gTxVfo->Modulation == MODULATION_WFM) {
+                strcpy(String, SUBV("N/A (WFM)", "\xe5\xae\xbd\xe5\xb8\xa6\xe8\xb0\x83\xe9\xa2\x91\xe4\xb8\x8d\xe5\x8f\xaf\xe7\x94\xa8"));
+                break;
+            }
+#endif
             strcpy(String, gRfBandwidthNames[gRfBandwidthMenuValues[gSubMenuSelection]]);
 #else
             strcpy(String, SUBV(gSubMenu_W_N[gSubMenuSelection], gSubMenu_W_N_CN[gSubMenuSelection]));

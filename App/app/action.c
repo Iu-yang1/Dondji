@@ -39,8 +39,12 @@
 #include "driver/bk4819.h"
 #include "driver/gpio.h"
 #include "driver/backlight.h"
+#include "frequencies.h"
 #include "functions.h"
 #include "misc.h"
+#ifdef ENABLE_CN_RF
+    #include "rf_profile.h"
+#endif
 #include "settings.h"
 #include "ui/inputbox.h"
 #include "ui/ui.h"
@@ -289,20 +293,59 @@ void ACTION_Scan(bool bRestart)
 }
 
 
+#ifdef ENABLE_WFM
+void ACTION_EnterWfm(void)
+{
+    const uint8_t vfo = gEeprom.TX_VFO;
+
+    /* WFM 是独立接收器，不能保持交叉收发，否则用户选择的 VFO 不会成为 RX VFO。 */
+    if (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF) {
+        gEeprom.CROSS_BAND_RX_TX = CROSS_BAND_OFF;
+        gRequestSaveSettings = true;
+        gUpdateStatus = true;
+    }
+
+    if (!RADIO_IsWfmFrequency(gTxVfo->pRX->Frequency)) {
+        /* WFM 仅由 BK1080 在 76--108 MHz 接收。切换到独立 VFO 槽位，
+         * 绝不改写当前的 MR 信道记录或中文名称。 */
+        const uint16_t wfmChannel = FREQ_CHANNEL_FIRST + BAND1_50MHz;
+        gEeprom.ScreenChannel[vfo] = wfmChannel;
+        gEeprom.FreqChannel[vfo] = wfmChannel;
+        RADIO_ConfigureChannel(vfo, VFO_CONFIGURE_RELOAD);
+        RADIO_SelectVfos();
+
+        gTxVfo->FrequencyReverse = false;
+        gTxVfo->pRX = &gTxVfo->freq_config_RX;
+        gTxVfo->pTX = &gTxVfo->freq_config_TX;
+        gTxVfo->freq_config_RX.Frequency = WFM_DEFAULT_FREQUENCY;
+        gTxVfo->freq_config_TX.Frequency = WFM_DEFAULT_FREQUENCY;
+        gTxVfo->TX_OFFSET_FREQUENCY = 0;
+        gTxVfo->TX_OFFSET_FREQUENCY_DIRECTION = TX_OFFSET_FREQUENCY_DIRECTION_OFF;
+        gRequestSaveVFO = true;
+    }
+
+    RADIO_SelectVfos();
+    gTxVfo->Modulation = MODULATION_WFM;
+    gRequestSaveChannel = 1;
+    gFlagReconfigureVfos = true;
+}
+#endif
+
 void ACTION_SwitchDemodul(void)
 {
-    gRequestSaveChannel = 1;
-
-    do {
-        gTxVfo->Modulation++;
-        if(gTxVfo->Modulation == MODULATION_UKNOWN)
-            gTxVfo->Modulation = MODULATION_FM;
-#ifdef ENABLE_WFM
-    } while (gTxVfo->Modulation == MODULATION_WFM &&
-             (gTxVfo->pRX->Frequency < 7600000u || gTxVfo->pRX->Frequency > 10800000u));
-#else
-    } while (false);
+    gTxVfo->Modulation++;
+    if (gTxVfo->Modulation == MODULATION_UKNOWN)
+        gTxVfo->Modulation = MODULATION_FM;
+#ifdef ENABLE_CN_RF
+    RF_PROFILE_SetModeDefault(gTxVfo);
 #endif
+#ifdef ENABLE_WFM
+    if (gTxVfo->Modulation == MODULATION_WFM) {
+        ACTION_EnterWfm();
+        return;
+    }
+#endif
+    gRequestSaveChannel = 1;
     gFlagReconfigureVfos = true;
 }
 
@@ -653,6 +696,13 @@ void ACTION_Wn(void)
     VFO_Info_t *pVfo = isRx ? gRxVfo : gTxVfo;
 
 #ifdef ENABLE_CN_RF
+#ifdef ENABLE_WFM
+    if (pVfo->Modulation == MODULATION_WFM) {
+        /* BK1080 的 WFM 滤波器不是 BK4829 REG_43，禁止伪修改。 */
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return;
+    }
+#endif
     pVfo->RfProfile.bandwidth = RF_PROFILE_IsWideBandwidth(pVfo->RfProfile.bandwidth)
                                     ? RF_BW_N9 : RF_BW_W23;
     pVfo->CHANNEL_BANDWIDTH = RF_PROFILE_IsWideBandwidth(pVfo->RfProfile.bandwidth)

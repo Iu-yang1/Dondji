@@ -48,6 +48,11 @@ VfoState_t     VfoState[2];
 #ifdef ENABLE_WFM
 static bool gWfmActive;
 
+bool RADIO_IsWfmFrequency(const uint32_t frequency)
+{
+    return frequency >= WFM_FREQUENCY_MIN && frequency <= WFM_FREQUENCY_MAX;
+}
+
 bool RADIO_IsWfmActive(void)
 {
     return gWfmActive;
@@ -1045,7 +1050,7 @@ void RADIO_SetupRegisters(bool switchToForeground)
     /* 每次完整重配都重放模式和高级配置，避免双守候/扫频遗留旧寄存器状态。 */
 #ifdef ENABLE_WFM
     if (gRxVfo->Modulation == MODULATION_WFM &&
-        (gRxVfo->pRX->Frequency < 7600000u || gRxVfo->pRX->Frequency > 10800000u))
+        !RADIO_IsWfmFrequency(gRxVfo->pRX->Frequency))
         gRxVfo->Modulation = MODULATION_FM;
 #endif
     RADIO_SetModulation(gRxVfo->Modulation);
@@ -1211,7 +1216,7 @@ void RADIO_SetModulation(ModulationMode_t modulation)
 #ifdef ENABLE_WFM
     if (modulation == MODULATION_WFM) {
         const uint32_t frequency = gRxVfo->pRX->Frequency;
-        if (frequency >= 7600000u && frequency <= 10800000u) {
+        if (RADIO_IsWfmFrequency(frequency)) {
             BK4819_WriteRegister(BK4819_REG_3F, 0);
             BK4819_Sleep();
             BK1080_Init((uint16_t)(frequency / 10000u), 1u);

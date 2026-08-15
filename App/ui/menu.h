@@ -45,7 +45,7 @@
 #include "settings.h"
 
 typedef struct {
-    const char  name[8];    // up to 7 chars + '\0' (was [7] = max 6 + NUL; longer strings leaked into next item)
+    const char  name[10];   // up to 9 chars + '\0'; "Bandwidth" must remain intact.
     uint8_t     menu_id;
 } t_menu_item;
 

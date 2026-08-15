@@ -41,6 +41,7 @@
 #if !defined(ENABLE_OVERLAY)
     #include "py32f0xx.h"
 #endif
+#include "app/action.h"
 #include "app/dtmf.h"
 #include "app/generic.h"
 #include "app/menu.h"
@@ -59,6 +60,9 @@
 #include "frequencies.h"
 #include "helper/battery.h"
 #include "misc.h"
+#ifdef ENABLE_CN_RF
+    #include "rf_profile.h"
+#endif
 #include "settings.h"
 #include "../driver/st7565.h"
 #if defined(ENABLE_OVERLAY)
@@ -1290,6 +1294,12 @@ void MENU_AcceptSetting(void)
 
         case MENU_W_N:
 #ifdef ENABLE_CN_RF
+#ifdef ENABLE_WFM
+            if (gTxVfo->Modulation == MODULATION_WFM) {
+                gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                return;
+            }
+#endif
             gTxVfo->RfProfile.bandwidth = gRfBandwidthMenuValues[gSubMenuSelection];
             gTxVfo->CHANNEL_BANDWIDTH = RF_PROFILE_IsWideBandwidth(gTxVfo->RfProfile.bandwidth)
                                              ? BANDWIDTH_WIDE : BANDWIDTH_NARROW;
@@ -1609,11 +1619,15 @@ void MENU_AcceptSetting(void)
 
         case MENU_AM:
 #ifdef ENABLE_WFM
-            if (gSubMenuSelection == MODULATION_WFM &&
-                (gTxVfo->pRX->Frequency < 7600000u || gTxVfo->pRX->Frequency > 10800000u))
+            if (gSubMenuSelection == MODULATION_WFM) {
+                ACTION_EnterWfm();
                 return;
+            }
 #endif
             gTxVfo->Modulation     = gSubMenuSelection;
+#ifdef ENABLE_CN_RF
+            RF_PROFILE_SetModeDefault(gTxVfo);
+#endif
             gFlagReconfigureVfos = true;
             gRequestSaveChannel = 1;
             return;

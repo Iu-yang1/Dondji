@@ -30,6 +30,9 @@ void ACTION_Scan(bool bRestart);
     void ACTION_FM(void);
 #endif
 void ACTION_SwitchDemodul(void);
+#ifdef ENABLE_WFM
+void ACTION_EnterWfm(void);
+#endif
 
 #ifdef ENABLE_BLMIN_TMP_OFF
     void ACTION_BlminTmpOff(void);

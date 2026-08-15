@@ -1,8 +1,9 @@
 /*
  * Dondji Firmware
  *
- * 仅发送国际 Morse 的 A-Z、0-9 和空格。实现不使用 IJV 或其他闭源固件代码；
- * 载波键控只调用 BK4829 驱动已有的 TX mute 接口。
+ * 仅发送国际 Morse 的 A-Z、0-9 和空格。
+ * A1A 保持 PLL/TX link 连续工作，点划沿只门控 PA-CTL 和板级 PA 使能。
+ * 本路径依据公开寄存器定义独立实现，不复制闭源固件代码。
  */
 
 #include <stdio.h>
@@ -15,6 +16,7 @@
 #include "driver/bk4819.h"
 #include "driver/py25q16.h"
 #include "driver/st7565.h"
+#include "driver/system.h"
 #include "functions.h"
 #include "misc.h"
 #include "radio.h"
@@ -24,9 +26,15 @@
 #define CW_KEYER_FLASH_BASE  0x062000u
 #define CW_KEYER_FLASH_END   0x063000u
 #define CW_KEYER_TEXT_SIZE   33u
+#define CW_KEYER_VISIBLE_TEXT 16u
 #define CW_KEYER_WPM_MIN     5u
 #define CW_KEYER_WPM_MAX     30u
 #define CW_KEYER_WPM_DEFAULT 18u
+#define CW_KEYER_BEACON_INTERVAL_MIN     15u
+#define CW_KEYER_BEACON_INTERVAL_MAX     600u
+#define CW_KEYER_BEACON_INTERVAL_STEP    15u
+#define CW_KEYER_BEACON_INTERVAL_DEFAULT 60u
+#define CW_KEYER_SAVE_DELAY_TICKS         200u
 
 _Static_assert(CW_KEYER_FLASH_BASE >= 0x062000u && CW_KEYER_FLASH_END <= 0x063000u,
                "CW 键控器必须使用独立且已审计的外置 Flash 扇区");
@@ -44,7 +52,21 @@ typedef struct __attribute__((packed)) {
     uint8_t magic[4];
     uint8_t wpm;
     uint8_t crc;
+} cw_keyer_config_v1_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t magic[4];
+    uint16_t beaconIntervalSeconds;
+    uint8_t wpm;
+    uint8_t crc;
 } cw_keyer_config_t;
+
+typedef enum {
+    CW_KEYER_FIELD_WPM,
+    CW_KEYER_FIELD_TEXT,
+    CW_KEYER_FIELD_BEACON,
+    CW_KEYER_FIELD_COUNT
+} cw_keyer_field_t;
 
 /* 位 0..4 是点划图样；位 5..7 是长度减一。表来自国际 Morse 标准编码。 */
 static const uint8_t kMorse[36] = {
@@ -55,9 +77,11 @@ static const uint8_t kMorse[36] = {
 };
 
 static bool sOpen;
-static bool sEditWpm = true;
+static cw_keyer_field_t sEditField = CW_KEYER_FIELD_WPM;
 static bool sConfigLoaded;
 static uint8_t sWpm = CW_KEYER_WPM_DEFAULT;
+static uint16_t sBeaconIntervalSeconds;
+static uint16_t sBeaconCountdown;
 static char sText[CW_KEYER_TEXT_SIZE];
 static uint8_t sTextLength;
 static KEY_Code_t sTapKey = KEY_INVALID;
@@ -71,6 +95,8 @@ static uint8_t sElementCount;
 static uint16_t sTicks;
 static uint8_t sStartWaitTicks;
 static bool sTxRejected;
+static bool sCarrierOn;
+static uint8_t sConfigSaveTicks;
 
 static uint8_t crc8(const uint8_t *data, uint8_t size)
 {
@@ -83,11 +109,22 @@ static uint8_t crc8(const uint8_t *data, uint8_t size)
     return crc;
 }
 
-static bool configValid(const cw_keyer_config_t *config)
+static bool configV1Valid(const cw_keyer_config_v1_t *config)
 {
     return memcmp(config->magic, "CWK1", 4) == 0 &&
            config->crc == crc8((const uint8_t *)config, sizeof(*config) - 1u) &&
            config->wpm >= CW_KEYER_WPM_MIN && config->wpm <= CW_KEYER_WPM_MAX;
+}
+
+static bool configValid(const cw_keyer_config_t *config)
+{
+    return memcmp(config->magic, "CWK2", 4) == 0 &&
+           config->crc == crc8((const uint8_t *)config, sizeof(*config) - 1u) &&
+           config->wpm >= CW_KEYER_WPM_MIN && config->wpm <= CW_KEYER_WPM_MAX &&
+           (config->beaconIntervalSeconds == 0u ||
+            (config->beaconIntervalSeconds >= CW_KEYER_BEACON_INTERVAL_MIN &&
+             config->beaconIntervalSeconds <= CW_KEYER_BEACON_INTERVAL_MAX &&
+             (config->beaconIntervalSeconds % CW_KEYER_BEACON_INTERVAL_STEP) == 0u));
 }
 
 static bool configSectorBlank(void)
@@ -107,11 +144,18 @@ static bool configSectorBlank(void)
 static void loadConfig(void)
 {
     cw_keyer_config_t config;
+    cw_keyer_config_v1_t configV1;
     if (sConfigLoaded)
         return;
     PY25Q16_ReadBuffer(CW_KEYER_FLASH_BASE, &config, sizeof(config));
-    if (configValid(&config))
+    if (configValid(&config)) {
         sWpm = config.wpm;
+        sBeaconIntervalSeconds = config.beaconIntervalSeconds;
+    } else {
+        PY25Q16_ReadBuffer(CW_KEYER_FLASH_BASE, &configV1, sizeof(configV1));
+        if (configV1Valid(&configV1))
+            sWpm = configV1.wpm; /* CWK1 平滑迁移；信标保持默认关闭。 */
+    }
     sConfigLoaded = true;
 }
 
@@ -119,14 +163,28 @@ static void saveConfig(void)
 {
     cw_keyer_config_t previous;
     cw_keyer_config_t config;
+    cw_keyer_config_v1_t previousV1;
+    sConfigSaveTicks = 0u;
     PY25Q16_ReadBuffer(CW_KEYER_FLASH_BASE, &previous, sizeof(previous));
-    if (!configValid(&previous) && !configSectorBlank())
+    PY25Q16_ReadBuffer(CW_KEYER_FLASH_BASE, &previousV1, sizeof(previousV1));
+    if (!configValid(&previous) && !configV1Valid(&previousV1) && !configSectorBlank())
         return; /* 未知版本绝不覆盖。 */
-    memcpy(config.magic, "CWK1", 4);
+    memcpy(config.magic, "CWK2", 4);
     config.wpm = sWpm;
+    config.beaconIntervalSeconds = sBeaconIntervalSeconds;
     config.crc = crc8((const uint8_t *)&config, sizeof(config) - 1u);
     if (memcmp(&previous, &config, sizeof(config)) != 0)
         PY25Q16_WriteBuffer(CW_KEYER_FLASH_BASE, &config, sizeof(config));
+}
+
+static void scheduleConfigSave(void)
+{
+    sConfigSaveTicks = CW_KEYER_SAVE_DELAY_TICKS;
+}
+
+static void restartBeaconCountdown(void)
+{
+    sBeaconCountdown = (uint16_t)(sBeaconIntervalSeconds * 100u);
 }
 
 static uint8_t dotTicks(void)
@@ -151,12 +209,28 @@ static bool encode(char c, uint8_t *code)
 
 static void keyDown(void)
 {
-    BK4819_ExitTxMute();
+    const uint8_t power = gCurrentVfo->TXP_CalculatedSetting;
+
+    /* 2 ms 分级上升沿；避免 PA-CTL 与板级 PA 同时硬切产生宽带键控杂散。 */
+    BK4819_SetupPowerAmplifier(power >> 1, gCurrentVfo->pTX->Frequency);
+    BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, true);
+    sCarrierOn = true;
+    SYSTEM_DelayMs(2);
+    BK4819_SetupPowerAmplifier(power, gCurrentVfo->pTX->Frequency);
 }
 
 static void keyUp(void)
 {
-    BK4819_EnterTxMute();
+    const uint8_t power = gCurrentVfo->TXP_CalculatedSetting;
+
+    if (!sCarrierOn)
+        return;
+    /* 2 ms 分级下降沿；最终先断开板级 PA，再把 PA-CTL/偏置归零。 */
+    BK4819_SetupPowerAmplifier(power >> 1, gCurrentVfo->pTX->Frequency);
+    SYSTEM_DelayMs(2);
+    BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, false);
+    BK4819_WriteRegister(BK4819_REG_36, 0u);
+    sCarrierOn = false;
 }
 
 static void startElement(void)
@@ -186,25 +260,28 @@ static void finishTransmission(void)
     sStartWaitTicks = 0;
     gFlagPrepareTX = false;
     if (gCurrentFunction == FUNCTION_TRANSMIT) {
-        APP_EndTransmission();
-        FUNCTION_Select(FUNCTION_FOREGROUND);
-        gFlagEndTransmission = false;
-        RADIO_SetVfoState(VFO_STATE_NORMAL);
+        GENERIC_Key_PTT(false);
 #ifdef ENABLE_FEAT_F4HWN
         /* PTT Toggle 进入“等待松键”状态，避免用户仍按住时自动再次发射。 */
-        if (gSetting_set_ptt_session && gPttOnePushCounter == 1u)
+        if (gSetting_set_ptt_session)
             gPttOnePushCounter = 3u;
 #endif
     }
+    restartBeaconCountdown();
     gUpdateDisplay = true;
     gUpdateStatus = true;
 }
 
-static void beginTransmission(void)
+static bool beginTransmission(bool automatic)
 {
+#ifdef ENABLE_VOX
+    if (automatic && gEeprom.VOX_SWITCH)
+        return false; /* 自动信标不伪造物理 PTT；VOX 开启时保持拒绝。 */
+#endif
     if (sTextLength == 0u || sState != CW_KEYER_IDLE || gTxVfo->Modulation != MODULATION_CW) {
-        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
-        return;
+        if (!automatic)
+            gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        return false;
     }
     sTextIndex = 0;
     sTxRejected = false;
@@ -212,6 +289,7 @@ static void beginTransmission(void)
     sStartWaitTicks = 100u;
     GENERIC_Key_PTT(true); /* 保留 TX Lock、TOT、BCL、电池和功率保护。 */
     gUpdateDisplay = true;
+    return true;
 }
 
 static const char *keyCharacters(KEY_Code_t key)
@@ -250,6 +328,7 @@ static void appendCharacter(KEY_Code_t key)
         return;
     }
     sTapCountdown = 70u;
+    restartBeaconCountdown();
     gUpdateDisplay = true;
 }
 
@@ -264,13 +343,15 @@ void CW_KEYER_Open(void)
         return;
     loadConfig();
     sOpen = true;
-    sEditWpm = true;
+    sEditField = CW_KEYER_FIELD_WPM;
     sState = CW_KEYER_IDLE;
+    sCarrierOn = false;
     sTxRejected = false;
     sTapKey = KEY_INVALID;
     sTapCountdown = 0;
     sTextLength = 0;
     sText[0] = '\0';
+    restartBeaconCountdown();
     gUpdateDisplay = true;
     gUpdateStatus = true;
 }
@@ -281,29 +362,27 @@ bool CW_KEYER_HandleKey(KEY_Code_t key, bool pressed, bool held)
         return false;
 
     if (key == KEY_PTT) {
-        if (pressed && !held)
-            beginTransmission();
-        else if (!pressed) {
-            if (gCurrentFunction == FUNCTION_TRANSMIT) {
-                if (gFlagEndTransmission)
-                    GENERIC_Key_PTT(false); /* 处理 TOT 等外部结束留下的 TX 状态。 */
-                else
-                    finishTransmission();
-            } else if (sState != CW_KEYER_IDLE) {
+        if (pressed && !held) {
+            if (sState == CW_KEYER_IDLE)
+                beginTransmission(false);
+            else
+                /* PTT 是整段报文的启动/中止键，松开不再截断点划。 */
                 finishTransmission();
-            }
         }
         return true;
     }
 
     if (sState != CW_KEYER_IDLE)
-        return true; /* 发射中仅允许物理 PTT 松开来中止。 */
+        return true; /* 发射中屏蔽编辑键；再次按下 PTT 才中止整段报文。 */
     if (pressed && !held)
         return true;
 
     if (key == KEY_EXIT && pressed && held) {
+        if (sConfigSaveTicks != 0u)
+            saveConfig();
         sOpen = false;
         gUpdateDisplay = true;
+        gUpdateStatus = true;
         return true;
     }
     if (pressed || held)
@@ -311,33 +390,49 @@ bool CW_KEYER_HandleKey(KEY_Code_t key, bool pressed, bool held)
 
     switch (key) {
     case KEY_MENU:
-        sEditWpm = !sEditWpm;
+        sEditField = (cw_keyer_field_t)((sEditField + 1u) % CW_KEYER_FIELD_COUNT);
         break;
     case KEY_UP:
-        if (sEditWpm && sWpm < CW_KEYER_WPM_MAX) {
+        if (sEditField == CW_KEYER_FIELD_WPM && sWpm < CW_KEYER_WPM_MAX) {
             sWpm++;
-            saveConfig();
+            scheduleConfigSave();
+        } else if (sEditField == CW_KEYER_FIELD_BEACON) {
+            if (sBeaconIntervalSeconds == 0u)
+                sBeaconIntervalSeconds = CW_KEYER_BEACON_INTERVAL_DEFAULT;
+            else if (sBeaconIntervalSeconds < CW_KEYER_BEACON_INTERVAL_MAX)
+                sBeaconIntervalSeconds += CW_KEYER_BEACON_INTERVAL_STEP;
+            restartBeaconCountdown();
+            scheduleConfigSave();
         }
         break;
     case KEY_DOWN:
-        if (sEditWpm && sWpm > CW_KEYER_WPM_MIN) {
+        if (sEditField == CW_KEYER_FIELD_WPM && sWpm > CW_KEYER_WPM_MIN) {
             sWpm--;
-            saveConfig();
+            scheduleConfigSave();
+        } else if (sEditField == CW_KEYER_FIELD_BEACON && sBeaconIntervalSeconds != 0u) {
+            if (sBeaconIntervalSeconds <= CW_KEYER_BEACON_INTERVAL_MIN)
+                sBeaconIntervalSeconds = 0u;
+            else
+                sBeaconIntervalSeconds -= CW_KEYER_BEACON_INTERVAL_STEP;
+            restartBeaconCountdown();
+            scheduleConfigSave();
         }
         break;
     case KEY_EXIT:
         if (sTextLength != 0u) {
             sText[--sTextLength] = '\0';
             sTapKey = KEY_INVALID;
+            restartBeaconCountdown();
         }
         break;
     case KEY_STAR:
         sTextLength = 0;
         sText[0] = '\0';
         sTapKey = KEY_INVALID;
+        restartBeaconCountdown();
         break;
     case KEY_0 ... KEY_9:
-        if (!sEditWpm)
+        if (sEditField == CW_KEYER_FIELD_TEXT)
             appendCharacter(key);
         break;
     default:
@@ -351,13 +446,26 @@ void CW_KEYER_TimeSlice10ms(void)
 {
     if (!sOpen)
         return;
+    if (sConfigSaveTicks != 0u && --sConfigSaveTicks == 0u)
+        saveConfig();
     if (sTapCountdown != 0u && --sTapCountdown == 0u)
         sTapKey = KEY_INVALID;
 
-    if (sState == CW_KEYER_IDLE)
+    if (sState == CW_KEYER_IDLE) {
+        if (sBeaconIntervalSeconds == 0u || sTextLength == 0u)
+            return;
+        if (sBeaconCountdown != 0u) {
+            sBeaconCountdown--;
+            return;
+        }
+        if (!beginTransmission(true))
+            restartBeaconCountdown();
         return;
+    }
     if (sState == CW_KEYER_WAIT_TX) {
         if (gCurrentFunction == FUNCTION_TRANSMIT) {
+            /* RADIO_SetTxParameters 已经将调制和 PA 关闭；第一个点划才开载波。 */
+            keyUp();
             if (!startCharacter())
                 finishTransmission();
             return;
@@ -365,13 +473,18 @@ void CW_KEYER_TimeSlice10ms(void)
         if (sStartWaitTicks != 0u && --sStartWaitTicks != 0u)
             return;
         sState = CW_KEYER_IDLE;
+        gFlagPrepareTX = false;
+        restartBeaconCountdown();
         sTxRejected = true;
         gUpdateDisplay = true;
         return;
     }
     if (gCurrentFunction != FUNCTION_TRANSMIT || gFlagEndTransmission) {
-        keyUp(); /* TOT、低电或其他外部中止后的保守静音。 */
+        keyUp(); /* TOT、低电或其他外部中止后立即关闭 PA。 */
+        if (gCurrentFunction == FUNCTION_TRANSMIT)
+            GENERIC_Key_PTT(false); /* 清除 gFlagEndTransmission 并完成通用 RX/状态恢复。 */
         sState = CW_KEYER_IDLE;
+        restartBeaconCountdown();
         gUpdateDisplay = true;
         return;
     }
@@ -413,47 +526,67 @@ void CW_KEYER_TimeSlice10ms(void)
 void CW_KEYER_Display(void)
 {
     char line[22];
-    const char *text = sText;
-    if (sTextLength > 20u)
-        text = &sText[sTextLength - 20u];
+    char beacon[12];
+    char text[CW_KEYER_VISIBLE_TEXT + 1u];
+    uint8_t textLength = sTextLength;
+    const char *textSource = sText;
+
+    if (textLength > CW_KEYER_VISIBLE_TEXT) {
+        textSource = &sText[textLength - CW_KEYER_VISIBLE_TEXT];
+        textLength = CW_KEYER_VISIBLE_TEXT;
+    }
+    if (textLength == 0u)
+        text[textLength++] = '-';
+    else
+        memcpy(text, textSource, textLength);
+    text[textLength] = '\0';
 
     UI_DisplayClear();
+    /* 键控器独占 128x64，避免主状态栏与标题在照片所示位置重叠。 */
 #ifdef ENABLE_CHINESE
-    if (gUiLanguage == UI_LANGUAGE_CN) {
-        UI_PrintStringSmallAtPixel("CW 键控器", 0, 127, 1, 12, 0);
-        UI_PrintStringSmallAtPixel(sEditWpm ? "速度  ▲▼ 调节" : "内容  数字键输入", 0, 127, 19, 30, 0);
-        UI_PrintStringSmallAtPixel("菜单切换  *清空  EXIT删除", 0, 127, 47, 58, 0);
-    } else
+    if (gUiLanguage == UI_LANGUAGE_CN)
+        UI_PrintStringSmallAtPixel("CW 键控器", 0, 68, 9, 20, 0);
+    else
 #endif
-    {
-        UI_PrintStringSmallBold("CW KEYER", 0, 127, 0);
-        UI_PrintStringSmallNormal(sEditWpm ? "WPM: UP/DOWN" : "TEXT: 2-9 ABC", 0, 127, 2);
-        UI_PrintStringSmallNormal("MENU FIELD *CLEAR EXIT DEL", 0, 127, 6);
-    }
-    snprintf(line, sizeof(line), "WPM %u", sWpm);
-    UI_PrintStringSmallBold(line, 0, 127, 1);
-    UI_PrintStringSmallNormal(text, 0, 127, 4);
+        UI_PrintStringSmallBold("CW KEYER", 0, 68, 0);
+
+    /* MENU 在速度、内容和信标周期之间切换；双边框表示当前字段。 */
+    UI_DrawRectangleBuffer(gFrameBuffer, 3, 17, 124, 41, true);
+    UI_DrawRectangleBuffer(gFrameBuffer, 3, 44, 124, 62, true);
+    if (sEditField == CW_KEYER_FIELD_WPM)
+        UI_DrawRectangleBuffer(gFrameBuffer, 1, 15, 126, 43, true);
+    else if (sEditField == CW_KEYER_FIELD_TEXT)
+        UI_DrawRectangleBuffer(gFrameBuffer, 1, 42, 126, 63, true);
+    else
+        UI_DrawRectangleBuffer(gFrameBuffer, 70, 0, 127, 13, true);
+
+    snprintf(line, sizeof(line), "%u WPM", sWpm);
+    UI_PrintString(line, 0, LCD_WIDTH - 1u, 3, 8);
+    UI_PrintStringSmallBold(text, 0, LCD_WIDTH - 1u, 6);
+
     if (sState != CW_KEYER_IDLE) {
-#ifdef ENABLE_CHINESE
-        if (gUiLanguage == UI_LANGUAGE_CN)
-            UI_PrintStringSmallAtPixel("正在 CW 发射", 0, 127, 40, 46, 0);
-        else
-#endif
-            UI_PrintStringSmallBold("TX CW", 0, 127, 5);
+        strcpy(beacon, "TX");
     } else if (sTxRejected) {
-#ifdef ENABLE_CHINESE
-        if (gUiLanguage == UI_LANGUAGE_CN)
-            UI_PrintStringSmallAtPixel("发射被保护功能拒绝", 0, 127, 40, 46, 0);
-        else
-#endif
-            UI_PrintStringSmallBold("TX BLOCKED", 0, 127, 5);
+        strcpy(beacon, "!");
     } else {
 #ifdef ENABLE_CHINESE
-        if (gUiLanguage == UI_LANGUAGE_CN)
-            UI_PrintStringSmallAtPixel("PTT 发射  长按EXIT返回", 0, 127, 40, 46, 0);
-        else
+        if (gUiLanguage == UI_LANGUAGE_CN) {
+            if (sBeaconIntervalSeconds == 0u)
+                strcpy(beacon, "信标关");
+            else
+                snprintf(beacon, sizeof(beacon), "信标%us", sBeaconIntervalSeconds);
+        } else
 #endif
-            UI_PrintStringSmallNormal("PTT SEND / HOLD EXIT BACK", 0, 127, 5);
+        if (sBeaconIntervalSeconds == 0u)
+            strcpy(beacon, "BCN OFF");
+        else
+            snprintf(beacon, sizeof(beacon), "BCN%uS", sBeaconIntervalSeconds);
     }
-    ST7565_BlitFullScreen();
+#ifdef ENABLE_CHINESE
+    if (gUiLanguage == UI_LANGUAGE_CN && sState == CW_KEYER_IDLE && !sTxRejected)
+        UI_PrintStringSmallAtPixel(beacon, 72, LCD_WIDTH - 1u, 9, 20, 0);
+    else
+#endif
+        UI_PrintStringSmallBold(beacon, 72, LCD_WIDTH - 1u, 0);
+    ST7565_BlitFullScreenDualVfoTightTop();
 }

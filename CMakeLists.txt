@@ -90,6 +90,11 @@ target_link_libraries(${EXE_NAME} ${TOOLCHAIN_LINK_LIBRARIES})
 
 if(ENABLE_LTO)
     target_compile_options(${EXE_NAME} PRIVATE -flto=auto)
+    if(ENABLE_CN_RF)
+        # CN_RF 接近 118 KiB 镜像上限；单 LTO 分区允许跨源文件做完整尺寸去重。
+        target_compile_options(${EXE_NAME} PRIVATE -flto-partition=one)
+        target_link_options(${EXE_NAME} PRIVATE -flto-partition=one)
+    endif()
 endif()
 
 # Generate map file

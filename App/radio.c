@@ -18,6 +18,9 @@
 #include <string.h>
 
 #include "am_fix.h"
+#ifdef ENABLE_CN_RF
+    #include "app/cw_keyer.h"
+#endif
 #include "app/dtmf.h"
 #include "app/mdc1200.h"
 #ifdef ENABLE_FMRADIO
@@ -1169,10 +1172,24 @@ void RADIO_SetTxParameters(void)
 
 #ifdef ENABLE_CN_RF
     RF_PROFILE_ApplyTx(gCurrentVfo);
-    if (gCurrentVfo->Modulation == MODULATION_CW) {
-        /* CW 是 PTT 控制的无调制载波，仍走原 PTT/TOT/BCL/功率保护状态机。 */
-        BK4819_SetTxDeviation(0);
-        BK4819_EnterTxMute();
+    if (gCurrentVfo->Modulation != MODULATION_FM) {
+        if (gCurrentVfo->Modulation == MODULATION_CW) {
+            /* A1A 全程禁用话筒 ADC；DSB 则必须保留 ADC 供 REG64 幅度检测。 */
+            BK4819_WriteRegister(BK4819_REG_30,
+                BK4819_REG_30_ENABLE_VCO_CALIB |
+                BK4819_REG_30_ENABLE_UNKNOWN   |
+                BK4819_REG_30_ENABLE_AF_DAC    |
+                BK4819_REG_30_ENABLE_DISC_MODE |
+                BK4819_REG_30_ENABLE_PLL_VCO   |
+                BK4819_REG_30_ENABLE_PA_GAIN   |
+                BK4819_REG_30_ENABLE_TX_DSP);
+            BK4819_EnterTxMute();
+        } else {
+            /* REG46/79/7A/31 构成完整幅度检测链；这里只开硬件检测，不启用软件 VOX PTT。 */
+            BK4819_EnableVox(gEeprom.VOX1_THRESHOLD, gEeprom.VOX0_THRESHOLD);
+        }
+        /* CW/DSB 整体关闭 REG40 的 FM 使能和频偏；Tone1 已由 MDC 清理路径关闭。 */
+        BK4819_WriteRegister(BK4819_REG_40, 0u);
     }
 #endif
 
@@ -1180,16 +1197,24 @@ void RADIO_SetTxParameters(void)
 
     BK4819_PickRXFilterPathBasedOnFrequency(gCurrentVfo->pTX->Frequency);
 
-    BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, true);
+#ifdef ENABLE_CN_RF
+    if (!CW_KEYER_IsOpen())
+#endif
+        BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, true);
 
     SYSTEM_DelayMs(5);
 
-    BK4819_SetupPowerAmplifier(gCurrentVfo->TXP_CalculatedSetting, gCurrentVfo->pTX->Frequency);
+#ifdef ENABLE_CN_RF
+    if (gCurrentVfo->Modulation == MODULATION_DSB || CW_KEYER_IsOpen())
+        BK4819_WriteRegister(BK4819_REG_36, 0u);
+    else
+#endif
+        BK4819_SetupPowerAmplifier(gCurrentVfo->TXP_CalculatedSetting, gCurrentVfo->pTX->Frequency);
 
     SYSTEM_DelayMs(10);
 
 #ifdef ENABLE_CN_RF
-    if (gCurrentVfo->Modulation == MODULATION_CW) {
+    if (gCurrentVfo->Modulation != MODULATION_FM) {
         BK4819_ExitSubAu();
     } else
 #endif
@@ -1513,7 +1538,8 @@ void RADIO_PrepareTX(void)
 #endif
 #ifdef ENABLE_CN_RF
     else if (gCurrentVfo->Modulation != MODULATION_FM &&
-             gCurrentVfo->Modulation != MODULATION_CW) {
+             gCurrentVfo->Modulation != MODULATION_CW &&
+             gCurrentVfo->Modulation != MODULATION_DSB) {
         /* 未经 BK4829 资料/仪表证明的 AM/SSB/WFM/BYP 发射一律禁止。 */
         State = VFO_STATE_TX_DISABLE;
     }
@@ -1612,8 +1638,9 @@ void RADIO_SendCssTail(void)
 void RADIO_SendEndOfTransmission(void)
 {
 #ifdef ENABLE_CN_RF
-    if (gCurrentVfo->Modulation == MODULATION_CW) {
-        BK4819_EnterTxMute();
+    if (gCurrentVfo->Modulation != MODULATION_FM) {
+        /* 先断开板级 PA；RADIO_SetupRegisters 随后将 REG36 归零并恢复 RX。 */
+        BK4819_ToggleGpioOut(BK4819_GPIO1_PIN29_PA_ENABLE, false);
         RADIO_SetupRegisters(false);
         return;
     }

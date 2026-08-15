@@ -447,9 +447,44 @@ static void HandlePowerSave()
     }
 }
 
+#ifdef ENABLE_CN_RF
+static void HandleTransmit(void)
+{
+    static uint32_t previousCycle;
+    uint32_t currentCycle;
+    uint32_t elapsed;
+
+    if (gCurrentVfo->Modulation != MODULATION_DSB || !gPttIsPressed || gFlagEndTransmission)
+        return;
+    currentCycle = SysTick->VAL;
+    elapsed = previousCycle >= currentCycle
+            ? previousCycle - currentCycle
+            : previousCycle + (SysTick->LOAD + 1u - currentCycle);
+
+    /* bit-bang 寄存器读写约占 0.14 ms；4 kHz 是不饿死 UI/安全状态机的上限。 */
+    if (elapsed < 12000u) /* 48 MHz / 4 kHz */
+        return;
+    previousCycle = currentCycle;
+
+    /*
+     * 实验性 DSB 包络路径，改编自 sfotis/uv-k5-firmware-ssbtx（Apache-2.0）。
+     * REG64 是话音幅度而非带符号 I/Q 样本，因此这里只能产生对称边带，
+     * 不能选择 USB/LSB，也不宣称具有理想 DSB-SC 的相位反转。
+     */
+    BK4819_SetupPowerAmplifier(
+        (uint8_t)((((BK4819_GetVoiceAmplitudeOut() & 0x7FFFu) >> 7) *
+                   gCurrentVfo->TXP_CalculatedSetting) >> 8),
+            gCurrentVfo->pTX->Frequency);
+}
+#endif
+
 static void (*HandleFunction_fn_table[])(void) = {
     [FUNCTION_FOREGROUND] = &CheckForIncoming,
+#ifdef ENABLE_CN_RF
+    [FUNCTION_TRANSMIT] = &HandleTransmit,
+#else
     [FUNCTION_TRANSMIT] = &FUNCTION_NOP,
+#endif
     [FUNCTION_MONITOR] = &FUNCTION_NOP,
     [FUNCTION_INCOMING] = &HandleIncoming,
     [FUNCTION_RECEIVE] = &HandleReceive,
@@ -1047,8 +1082,12 @@ void APP_Update(void)
     if (gReducedService)
         return;
 
+#ifdef ENABLE_CN_RF
+    HandleFunction();
+#else
     if (gCurrentFunction != FUNCTION_TRANSMIT)
         HandleFunction();
+#endif
 
 #ifdef ENABLE_FMRADIO
 //  if (gFmRadioCountdown_500ms > 0)
@@ -1473,7 +1512,11 @@ void APP_TimeSlice10ms(void)
     }
 #endif
 
-    if (gUpdateStatusCurrent) {
+    if (gUpdateStatusCurrent
+#ifdef ENABLE_CN_RF
+        && !CW_KEYER_IsOpen()
+#endif
+    ) {
         UI_DisplayStatus();
     }
 

@@ -205,10 +205,10 @@ void FUNCTION_Transmit()
     BK4819_ToggleGpioOut(BK4819_GPIO5_PIN1_RED, true);
 
 #ifdef ENABLE_CN_RF
-    if (gCurrentVfo->Modulation != MODULATION_CW)
+    if (gCurrentVfo->Modulation == MODULATION_FM)
 #endif
     {
-        /* CW 直键必须保持纯载波，不能让 PTT ID/应答路径解除 TX 静音。 */
+        /* CW/DSB 不能让 PTT ID/应答路径注入额外调制。 */
         DTMF_Reply();
 
         if (gCurrentVfo->DTMF_PTT_ID_TX_MODE == PTT_ID_APOLLO)

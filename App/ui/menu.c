@@ -1003,7 +1003,7 @@ static void UI_MENU_DrawMemNameSymbolSixPack(unsigned int x1, unsigned int x2)
     const unsigned int y_strip_bot = 57u;
     uint8_t slot_index;
 
-    if (x2 <= x1)
+    if (n == 0u || x2 <= x1)
     {
         return;
     }
@@ -1117,25 +1117,13 @@ static void UI_MENU_DrawMemNamePinyinEdit(unsigned int sub_val_x1, unsigned int 
                 x += chn_cw + ul_spacing;
                 bi += 3;
             }
-            else if (edit[bi] == '_' || edit[bi] == 0)
+            else if (edit[bi] == MEM_NAME_EDIT_PAD || edit[bi] == 0)
             {
-                if (edit[bi] == '_' && bi + 2 < max_b && edit[bi + 1] == '_' && edit[bi + 2] == '_')
-                {
-                    slot_w[slot_count] = chn_cw;
-                    if (edit_index >= 0 &&
-                        ((size_t)edit_index == bi || (size_t)edit_index == bi + 1 || (size_t)edit_index == bi + 2))
-                        cursor_slot = (int8_t)slot_count;
-                    x += chn_cw + ul_spacing;
-                    bi += 3;
-                }
-                else
-                {
-                    slot_w[slot_count] = eng_cw;
-                    if (edit_index >= 0 && (size_t)edit_index == bi)
-                        cursor_slot = (int8_t)slot_count;
-                    x += eng_cw + ul_spacing;
-                    bi++;
-                }
+                slot_w[slot_count] = eng_cw;
+                if (edit_index >= 0 && (size_t)edit_index == bi)
+                    cursor_slot = (int8_t)slot_count;
+                x += eng_cw + ul_spacing;
+                bi++;
             }
             else
             {
@@ -1153,23 +1141,11 @@ static void UI_MENU_DrawMemNamePinyinEdit(unsigned int sub_val_x1, unsigned int 
         while (bi < max_b && slot_count < 15 && x + eng_cw <= sub_val_x2)
         {
             slot_x[slot_count] = x;
-            if (edit[bi] == '_' && bi + 2 < max_b && edit[bi + 1] == '_' && edit[bi + 2] == '_')
-            {
-                slot_w[slot_count] = chn_cw;
-                if (edit_index >= 0 &&
-                    ((size_t)edit_index == bi || (size_t)edit_index == bi + 1 || (size_t)edit_index == bi + 2))
-                    cursor_slot = (int8_t)slot_count;
-                bi += 3;
-                x += chn_cw + ul_spacing;
-            }
-            else
-            {
-                slot_w[slot_count] = eng_cw;
-                if (edit_index >= 0 && (size_t)edit_index == bi)
-                    cursor_slot = (int8_t)slot_count;
-                bi++;
-                x += eng_cw + ul_spacing;
-            }
+            slot_w[slot_count] = eng_cw;
+            if (edit_index >= 0 && (size_t)edit_index == bi)
+                cursor_slot = (int8_t)slot_count;
+            bi++;
+            x += eng_cw + ul_spacing;
             slot_count++;
         }
 
@@ -1219,6 +1195,10 @@ static void UI_MENU_DrawMemNamePinyinEdit(unsigned int sub_val_x1, unsigned int 
         digits[i] = 0;
         UI_PrintStringSmallAtPixel(digits, (uint8_t)(sub_val_x2 - 33), (uint8_t)(sub_val_x2 - 3), y_name, (uint8_t)(y_name + 11u), 0u);
     }
+
+    /* 确认提示占用底栏时，不绘制候选或符号条，避免文字重叠。 */
+    if (gAskForConfirmation != 0)
+        return;
 
     // Display pinyin candidates with 6-pixel gap between each
     if (gMemNameInputMode == MEM_NAME_INPUT_PINYIN && gPinyinCandidateCount > 0)

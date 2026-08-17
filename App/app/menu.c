@@ -340,12 +340,73 @@ static void MENU_MemNameFlipSymbolPage(int8_t delta)
     MENU_BuildMemNameSymbolCandidates();
 }
 
+/* UTF-8 汉字占 3 字节；编辑空位和拉丁字符各占 1 字节。 */
+static uint8_t MENU_MemNameSlotWidthAt(int index)
+{
+    const int limit = (int)CHANNEL_NAME_MAX_BYTES;
+
+    if (index < 0 || index >= limit)
+        return 1u;
+
+    return ((uint8_t)edit[index] >= 0xE4u && (uint8_t)edit[index] <= 0xEFu) ? 3u : 1u;
+}
+
+/* 将任意字节位置移动到下一个可编辑槽位起始处。 */
+static int MENU_MemNameNextSlotIndex(int index)
+{
+    const int limit = (int)CHANNEL_NAME_MAX_BYTES;
+    int slot = 0;
+
+    if (index >= limit)
+        return limit;
+
+    while (slot < limit)
+    {
+        const uint8_t width = MENU_MemNameSlotWidthAt(slot);
+
+        if (index < slot + (int)width)
+            return slot + (int)width;
+
+        slot += (int)width;
+    }
+
+    return limit;
+}
+
+/* 将任意字节位置回退到上一个可编辑槽位起始处。 */
+static int MENU_MemNamePrevSlotIndex(int index)
+{
+    const int limit = (int)CHANNEL_NAME_MAX_BYTES;
+    int slot = 0;
+    int previous = 0;
+
+    if (index <= 0)
+        return 0;
+
+    if (index > limit)
+        index = limit;
+
+    while (slot < index && slot < limit)
+    {
+        previous = slot;
+        slot += (int)MENU_MemNameSlotWidthAt(slot);
+    }
+
+    return previous;
+}
+
 static void MENU_MemNameAdvanceAfterInput(void)
 {
     gMemNameCandidateCount = 0;
 
-    if (++edit_index < (int)CHANNEL_NAME_MAX_BYTES)
+    edit_index = MENU_MemNameNextSlotIndex(edit_index);
+
+    if (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
+    {
+        if (gMemNameInputMode == MEM_NAME_INPUT_SYMBOL)
+            MENU_BuildMemNameSymbolCandidates();
         return;
+    }
 
     gFlagAcceptSetting  = false;
     gAskForConfirmation = 0;
@@ -1367,14 +1428,16 @@ void MENU_AcceptSetting(void)
 
         case MENU_MEM_NAME:
         {
-            int trim_i;
+            int index;
 
-            for (trim_i = (int)CHANNEL_NAME_MAX_BYTES - 1; trim_i >= 0; trim_i--) {
-                uint8_t c = (uint8_t)edit[trim_i];
-                if (c != ' ' && c != '_' && c != 0x00 && c != 0xff)
+            /* 只移除尾部编辑空位；保留名称中间的空格和真实下划线。 */
+            for (index = (int)CHANNEL_NAME_MAX_BYTES - 1; index >= 0; index--) {
+                uint8_t c = (uint8_t)edit[index];
+                if (c != (uint8_t)MEM_NAME_EDIT_PAD && c != 0x00 && c != 0xff)
                     break;
-                edit[trim_i] = ' ';
+                edit[index] = 0;
             }
+            edit[CHANNEL_NAME_MAX_BYTES] = 0;
 
             SETTINGS_SaveChannelName(gSubMenuSelection, edit);
             return;
@@ -2793,41 +2856,31 @@ static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 
                     if (edit_index == (int)CHANNEL_NAME_MAX_BYTES)
                     {
-                        if ((int)CHANNEL_NAME_MAX_BYTES >= 3 &&
-                            (uint8_t)edit[(int)CHANNEL_NAME_MAX_BYTES - 1] >= 0xE4 &&
-                            (uint8_t)edit[(int)CHANNEL_NAME_MAX_BYTES - 1] <= 0xEF)
-                            edit_index = (int)CHANNEL_NAME_MAX_BYTES - 3;
-                        else
-                            edit_index = (int)CHANNEL_NAME_MAX_BYTES - 1;
+                        edit_index = MENU_MemNamePrevSlotIndex(edit_index);
                         gRequestDisplayScreen = DISPLAY_MENU;
                         return;
                     }
                     if (edit_index >= 0 && edit_index < (int)CHANNEL_NAME_MAX_BYTES)
                     {
                         uint8_t c = (uint8_t)edit[edit_index];
-                        if (c != '_')
+                        if (c != MEM_NAME_EDIT_PAD)
                         {
                             if (c >= 0xE4 && c <= 0xEF)
                             {
-                                edit[edit_index]     = '_';
-                                edit[edit_index + 1] = '_';
-                                edit[edit_index + 2] = '_';
+                                edit[edit_index]     = MEM_NAME_EDIT_PAD;
+                                edit[edit_index + 1] = MEM_NAME_EDIT_PAD;
+                                edit[edit_index + 2] = MEM_NAME_EDIT_PAD;
                             }
                             else
                             {
-                                edit[edit_index] = '_';
+                                edit[edit_index] = MEM_NAME_EDIT_PAD;
                             }
                             gRequestDisplayScreen = DISPLAY_MENU;
                             return;
                         }
                         else if (edit_index > 0)
                         {
-                            if (edit_index >= 3 &&
-                                (uint8_t)edit[edit_index - 3] >= 0xE4 &&
-                                (uint8_t)edit[edit_index - 3] <= 0xEF)
-                                edit_index -= 3;
-                            else
-                                edit_index--;
+                            edit_index = MENU_MemNamePrevSlotIndex(edit_index);
                             gRequestDisplayScreen = DISPLAY_MENU;
                             return;
                         }
@@ -2846,17 +2899,17 @@ static void MENU_Key_EXIT(bool bKeyPressed, bool bKeyHeld)
 #endif
                 {
                     bool has_char_at_current =
-                        (edit[edit_index] != ' ' && edit[edit_index] != '_' && edit[edit_index] != '\0');
+                        (edit[edit_index] != MEM_NAME_EDIT_PAD && edit[edit_index] != '\0');
 
                     if (has_char_at_current)
                     {
-                        edit[edit_index] = '_';
+                        edit[edit_index] = MEM_NAME_EDIT_PAD;
                         gRequestDisplayScreen = DISPLAY_MENU;
                         return;
                     }
                     else if (edit_index > 0)
                     {
-                        edit_index--;
+                        edit_index = MENU_MemNamePrevSlotIndex(edit_index);
                         gRequestDisplayScreen = DISPLAY_MENU;
                         return;
                     }
@@ -3068,7 +3121,7 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
 
             edit_index = (int)strlen(edit);
             while (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
-                edit[edit_index++] = '_';
+                edit[edit_index++] = MEM_NAME_EDIT_PAD;
             edit[edit_index] = 0;
             edit_index = 0;
 
@@ -3149,8 +3202,7 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
             // No input state: move cursor forward
             if (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
             {
-                uint8_t cw = ((uint8_t)edit[edit_index] >= 0xE4 && (uint8_t)edit[edit_index] <= 0xEF) ? 3u : 1u;
-                edit_index += cw;
+                edit_index = MENU_MemNameNextSlotIndex(edit_index);
 
                 if (edit_index >= (int)CHANNEL_NAME_MAX_BYTES)
                 {
@@ -3172,7 +3224,8 @@ static void MENU_Key_MENU(const bool bKeyPressed, const bool bKeyHeld)
         {
             if (edit_index >= 0 && edit_index < (int)CHANNEL_NAME_MAX_BYTES)
             {
-                if (++edit_index < (int)CHANNEL_NAME_MAX_BYTES)
+                edit_index = MENU_MemNameNextSlotIndex(edit_index);
+                if (edit_index < (int)CHANNEL_NAME_MAX_BYTES)
                     return;
 
                 gFlagAcceptSetting  = false;

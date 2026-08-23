@@ -145,23 +145,26 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
   } >RAM AT> FLASH
 
-  /* Explicit placement of .noncacheable (CherryUSB) + end-of-FLASH symbol */
-  .noncacheable :
+  /* .data is the final section with an initialization image in FLASH. */
+  _eflash_used = LOADADDR(.data) + SIZEOF(.data);
+  
+  /*
+   * Zero-initialized RAM. CherryUSB marks its core state as .noncacheable,
+   * but Cortex-M0+ has no data cache and the startup code never copied the old
+   * .noncacheable AT>FLASH image. Fold it into the NOLOAD zero-init range so
+   * C's static-zero semantics are honoured without storing hundreds of zero
+   * bytes in the firmware image.
+   */
+  .bss (NOLOAD) :
   {
     . = ALIGN(4);
+    _sbss = .;         /* create a global symbol at bss start */
+    __bss_start__ = _sbss;
+
     *(.noncacheable)
     *(.noncacheable*)
     . = ALIGN(4);
-  } >RAM AT> FLASH
-  _eflash_used = LOADADDR(.noncacheable) + SIZEOF(.noncacheable);
-  
-  /* Uninitialized data section */
-  . = ALIGN(4);
-  .bss :
-  {
-    /* This is used by the startup in order to initialize the .bss secion */
-    _sbss = .;         /* define a global symbol at bss start */
-    __bss_start__ = _sbss;
+
     *(.bss)
     *(.bss*)
     *(COMMON)
@@ -194,5 +197,4 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
-
 

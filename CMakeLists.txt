@@ -76,6 +76,16 @@ endif()
 
 message("EXE_NAME = " ${EXE_NAME})
 
+# CN_RF is the base for the satellite-oriented build. Do not compile any of the
+# legacy spectrum/waterfall or audio-scope paths into this image; the preset
+# inherits Fusion, where these features are enabled by default.
+if(ENABLE_CN_RF)
+    set(ENABLE_SPECTRUM OFF)
+    set(ENABLE_FEAT_F4HWN_SPECTRUM OFF)
+    set(ENABLE_FEAT_F4HWN_AUDIO_SCOPE OFF)
+    message("CN_RF: spectrum and scope features disabled at configure time")
+endif()
+
 add_executable(${EXE_NAME})
 
 add_subdirectory(Drivers)

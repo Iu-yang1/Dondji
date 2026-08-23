@@ -1,5 +1,7 @@
 #include "app/dsb_tx.h"
 
+#include <stddef.h>
+
 #include "driver/bk4819.h"
 #include "functions.h"
 #include "misc.h"

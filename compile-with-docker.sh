@@ -69,6 +69,20 @@ build_preset() {
       arm-none-eabi-gcc --version
       cmake --preset "$preset" "$@"
       cmake --build --preset "$preset" -j
+
+      # Keep the map artifact for full attribution, but also print a compact
+      # report directly in CI so the next size regression can be diagnosed
+      # without first downloading artifacts. nm includes both large functions
+      # and large read-only/data objects after LTO.
+      elf="$(find "build/$preset" -maxdepth 1 -type f -name "*.elf" -print -quit)"
+      if [[ -n "$elf" ]]; then
+        echo ""
+        echo "=== Firmware section sizes: $elf ==="
+        arm-none-eabi-size -A "$elf" || true
+        echo ""
+        echo "=== 50 largest linked symbols (bytes, ascending) ==="
+        arm-none-eabi-nm -S --size-sort --radix=d "$elf" | tail -n 50 || true
+      fi
     ' bash "$preset" "${EXTRA_ARGS[@]}"
 
   echo "✅ Done: ${preset}"

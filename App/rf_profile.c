@@ -58,6 +58,37 @@ static const uint16_t kGainReg13[16] = {
     0x007E, 0x009F, 0x00FF, 0x01FF, 0x02FF, 0x035F, 0x037F, 0x03FF
 };
 
+/* Stock BK4829 硬件 AGC 表。公开 BK4819 寄存器资料将 REG10..14 的
+ * [7:5] 明确定义为 LNA gain；BK4829 stock/F4HWN 也使用同一字段布局。
+ * RF Boost 不再把整个软件 gain index +1，而只把 LNA 前端提高一档，
+ * 保持 short-LNA、Mixer、PGA 和 RFGAIN ceiling 不变。这样 Boost 是真正
+ * 的前端增益偏置，并且 AUTO AGC 下也有效；找不到可靠资料证明 UV-K1
+ * 还有一根独立的“第二级 preamp”GPIO，因此不猜测或同时打开两路板级 LNA。 */
+static const BK4819_REGISTER_t kAgcRegisters[5] = {
+    BK4819_REG_10, BK4819_REG_11, BK4819_REG_12, BK4819_REG_13, BK4819_REG_14
+};
+
+static const uint16_t kAgcStockGain[5] = {
+    0x0318, 0x033A, 0x03DB, 0x03DF, 0x0210
+};
+
+static uint16_t applyLnaBoost(uint16_t gainWord, bool enable)
+{
+    if (enable) {
+        uint16_t lna = (gainWord >> 5) & 0x07u;
+        if (lna < 7u)
+            lna++;
+        gainWord = (gainWord & ~(0x07u << 5)) | (lna << 5);
+    }
+    return gainWord;
+}
+
+static void applyHardwareAgcTable(bool boost)
+{
+    for (uint8_t i = 0; i < ARRAY_SIZE(kAgcRegisters); i++)
+        BK4819_WriteRegister(kAgcRegisters[i], applyLnaBoost(kAgcStockGain[i], boost));
+}
+
 /* REG_40[11:0] 是公开文档定义的 FM deviation 控制字。0 表示保持 Dondji
  * 原标准值；1..9 是保守的工程调节字，均低于芯片字段上限。控制字不是
  * 物理 Hz，发射占用带宽必须用频偏仪/频谱仪确认。 */
@@ -264,12 +295,12 @@ void RF_PROFILE_ApplyRx(const VFO_Info_t *vfo)
     BK4819_SetFilterBandwidthRaw(kBandwidthReg43[p->bandwidth]);
     BK4819_SetAfcLevel(p->afc);
     if (p->agc == RF_AGC_AUTO) {
+        applyHardwareAgcTable(p->rfBoost != 0u);
         BK4819_SetAGC(true);
     } else {
-        uint8_t index = p->rfGain + p->rfBoost;
-        if (index > 15u) index = 15u;
+        const uint8_t index = p->rfGain;
         gAgcGainIndex[vfoIndex] = index;
-        BK4819_SetFixedRxGain(kGainReg13[index]);
+        BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[index], p->rfBoost != 0u));
     }
 }
 
@@ -324,12 +355,11 @@ void RF_PROFILE_TimeSlice10ms(void)
         return;
     gAgcTicks = 0;
     vfoIndex = gRxVfo == &gEeprom.VfoInfo[1] ? 1u : 0u;
-    uint8_t ceiling = p->rfGain + p->rfBoost;
-    if (ceiling > 15u) ceiling = 15u;
+    const uint8_t ceiling = p->rfGain;
     const int16_t rssi = BK4819_GetRSSI_dBm();
     if (rssi > -65 && gAgcGainIndex[vfoIndex] > 0u)
         gAgcGainIndex[vfoIndex]--;
     else if (rssi < -90 && gAgcGainIndex[vfoIndex] < ceiling)
         gAgcGainIndex[vfoIndex]++;
-    BK4819_SetFixedRxGain(kGainReg13[gAgcGainIndex[vfoIndex]]);
+    BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[gAgcGainIndex[vfoIndex]], p->rfBoost != 0u));
 }

@@ -4,6 +4,22 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      preset:
+        description: Firmware preset to build
+        required: true
+        default: CN_RF
+        type: choice
+        options:
+          - CN_RF
+          - Custom
+          - Fusion
+          - Bandscope
+          - Broadcast
+          - Basic
+          - RescueOps
+          - Game
+          - All
 
 jobs:
   build:
@@ -11,15 +27,18 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Compile firmware
+      shell: bash
       run: |
+        set -euo pipefail
         chmod +x compile-with-docker.sh
-        ./compile-with-docker.sh
+        ./compile-with-docker.sh "${{ inputs.preset || 'Custom' }}"
 
     - name: Upload firmware artifact
       uses: actions/upload-artifact@v4
       with:
-        name: firmware-artifact
+        name: firmware-${{ inputs.preset || 'Custom' }}
         path: build/**/*.bin
+        if-no-files-found: error

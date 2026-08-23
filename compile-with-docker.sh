@@ -70,18 +70,32 @@ build_preset() {
       cmake --preset "$preset" "$@"
       cmake --build --preset "$preset" -j
 
-      # Keep the map artifact for full attribution, but also print a compact
-      # report directly in CI so the next size regression can be diagnosed
-      # without first downloading artifacts. nm includes both large functions
-      # and large read-only/data objects after LTO.
+      # Keep the map/ELF artifacts for full attribution, but also print compact
+      # reports directly in CI.  The split symbol reports make it much easier
+      # to distinguish code-size regressions from fonts, strings and bitmaps.
       elf="$(find "build/$preset" -maxdepth 1 -type f -name "*.elf" -print -quit)"
       if [[ -n "$elf" ]]; then
         echo ""
         echo "=== Firmware section sizes: $elf ==="
         arm-none-eabi-size -A "$elf" || true
+
         echo ""
-        echo "=== 50 largest linked symbols (bytes, ascending) ==="
-        arm-none-eabi-nm -S --size-sort --radix=d "$elf" | tail -n 50 || true
+        echo "=== 40 largest code symbols (.text, bytes ascending) ==="
+        arm-none-eabi-nm -S --size-sort --radix=d "$elf" \
+          | awk '\''$3 ~ /^[tT]$/ { print }'\'' \
+          | tail -n 40 || true
+
+        echo ""
+        echo "=== 40 largest read-only symbols (.rodata, bytes ascending) ==="
+        arm-none-eabi-nm -S --size-sort --radix=d "$elf" \
+          | awk '\''$3 ~ /^[rR]$/ { print }'\'' \
+          | tail -n 40 || true
+
+        echo ""
+        echo "=== 30 largest RAM symbols (.data/.bss, bytes ascending) ==="
+        arm-none-eabi-nm -S --size-sort --radix=d "$elf" \
+          | awk '\''$3 ~ /^[bBdD]$/ { print }'\'' \
+          | tail -n 30 || true
       fi
     ' bash "$preset" "${EXTRA_ARGS[@]}"
 

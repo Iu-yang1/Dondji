@@ -36,7 +36,16 @@ jobs:
         chmod +x compile-with-docker.sh
         ./compile-with-docker.sh "${{ inputs.preset || 'Custom' }}"
 
+    - name: Upload linker map
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: linker-map-${{ inputs.preset || 'Custom' }}
+        path: build/**/*.map
+        if-no-files-found: ignore
+
     - name: Upload firmware artifact
+      if: success()
       uses: actions/upload-artifact@v6
       with:
         name: firmware-${{ inputs.preset || 'Custom' }}

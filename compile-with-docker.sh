@@ -7,6 +7,7 @@ set -euo pipefail
 # Examples:
 #   ./compile-with-docker.sh Custom
 #   ./compile-with-docker.sh Fusion -DAUTHOR_STRING_2=BD1AHN
+#   ./compile-with-docker.sh CN_RF
 #   (ENABLE_CHINESE is ON in the default CMake preset — no extra -D for Chinese UI.)
 #   ./compile-with-docker.sh Bandscope -DENABLE_SPECTRUM=ON
 #   ./compile-with-docker.sh Broadcast -DENABLE_FEAT_F4HWN_GAME=ON -DENABLE_NOAA=ON
@@ -18,22 +19,23 @@ IMAGE=uvk1-uvk5v3
 PRESET=${1:-Custom}
 shift || true  # remove preset from arguments if present
 
-# Any remaining args will be treated as CMake cache variables
+# Any remaining args are passed verbatim to CMake as cache/options arguments.
 EXTRA_ARGS=("$@")
 
 # ---------------------------------------------
 # Validate preset name
 # ---------------------------------------------
-if [[ ! "$PRESET" =~ ^(Custom|Bandscope|Broadcast|Basic|RescueOps|Game|Fusion|All)$ ]]; then
+if [[ ! "$PRESET" =~ ^(Custom|Bandscope|Broadcast|Basic|RescueOps|Game|Fusion|CN_RF|All)$ ]]; then
   echo "❌ Unknown preset: '$PRESET'"
-  echo "Valid presets are: Custom, Bandscope, Broadcast, Basic, RescueOps, Game, Fusion, All"
+  echo "Valid presets are: Custom, Bandscope, Broadcast, Basic, RescueOps, Game, Fusion, CN_RF, All"
   exit 1
 fi
 
 # ---------------------------------------------
-# Build the Docker image (only needed once)
+# Build the Docker image
+# GitHub-hosted runners are ephemeral, so CI normally rebuilds this image.
 # ---------------------------------------------
-if [[ "$(docker images -q $IMAGE)" == "" ]]; then
+if [[ -z "$(docker images -q "$IMAGE")" ]]; then
   echo "Building Docker image..."
   docker build -t "$IMAGE" .
 fi
@@ -43,6 +45,7 @@ fi
 # ---------------------------------------------
 rm -rf build
 export MSYS_NO_PATHCONV=1
+
 # ---------------------------------------------
 # Function to build one preset
 # ---------------------------------------------
@@ -51,12 +54,23 @@ build_preset() {
   echo ""
   echo "=== 🚀 Building preset: ${preset} ==="
   echo "---------------------------------------------"
+
+  # Do not allocate a TTY here. `docker run -it` fails on non-interactive
+  # runners such as GitHub Actions with "the input device is not a TTY".
+  # Pass the preset and additional CMake arguments as positional parameters so
+  # quoting is preserved both locally and in CI.
   docker run --rm \
-    -u $(id -u):$(id -g) \
-    -it -v "$PWD":/src -w /src "$IMAGE" \
-    bash -c "which arm-none-eabi-gcc && arm-none-eabi-gcc --version && \
-             cmake --preset ${preset} ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} && \
-             cmake --build --preset ${preset} -j"
+    -u "$(id -u):$(id -g)" \
+    -v "$PWD":/src -w /src "$IMAGE" \
+    bash -c 'set -euo pipefail
+      preset="$1"
+      shift
+      which arm-none-eabi-gcc
+      arm-none-eabi-gcc --version
+      cmake --preset "$preset" "$@"
+      cmake --build --preset "$preset" -j
+    ' bash "$preset" "${EXTRA_ARGS[@]}"
+
   echo "✅ Done: ${preset}"
 }
 

@@ -8,11 +8,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <stdint.h>
@@ -33,6 +33,17 @@
 #define PIN_SCL GPIO_MAKE_PIN(GPIOB, LL_GPIO_PIN_8)
 #define PIN_SDA GPIO_MAKE_PIN(GPIOB, LL_GPIO_PIN_9)
 
+/*
+ * BK4829 RF/PLL defaults cross-checked against igimalek/FW-KA52-K1-K5V3.
+ * That firmware carries a BK4829-specific register set instead of the legacy
+ * BK4819 values used by the original UV-K5 codebase.  Keep Dondji's newer
+ * modulation/RF-profile logic; only the low-level BK4829 tuning is adopted.
+ */
+#define BK4829_REG_37_ACTIVE       0x9D1Fu
+#define BK4829_REG_37_RX_ACTIVE    0x9F1Fu
+#define BK4829_REG_1F_PLL_TUNING   0xC65Au
+#define BK4829_REG_3E_VCO_TUNING   0x94C6u
+
 static const uint16_t FSK_RogerTable[7] = {0xF1A2, 0x7446, 0x61A4, 0x6544, 0x4E8A, 0xE044, 0xEA84};
 
 static const uint8_t DTMF_TONE1_GAIN = 65;
@@ -41,6 +52,52 @@ static const uint8_t DTMF_TONE2_GAIN = 93;
 static uint16_t gBK4819_GpioOutState;
 
 bool gRxIdleMode;
+
+/*
+ * Only cache stable configuration registers.  State-machine, reset, FIFO,
+ * frequency and PA-envelope registers are intentionally excluded because a
+ * repeated write can itself be meaningful.  A compact index/mask keeps the
+ * RAM cost low while still removing the most common redundant bit-bang SPI
+ * transactions from RF profile and audio configuration paths.
+ */
+static uint16_t gBK4819_RegisterCache[23];
+static uint32_t gBK4819_RegisterCacheValid;
+
+static int8_t BK4819_GetCacheIndex(const BK4819_REGISTER_t Register)
+{
+    switch (Register)
+    {
+        case BK4819_REG_10: return 0;
+        case BK4819_REG_11: return 1;
+        case BK4819_REG_12: return 2;
+        case BK4819_REG_13: return 3;
+        case BK4819_REG_14: return 4;
+        case BK4819_REG_19: return 5;
+        case BK4819_REG_1F: return 6;
+        case BK4819_REG_2B: return 7;
+        case BK4819_REG_31: return 8;
+        case BK4819_REG_3D: return 9;
+        case BK4819_REG_3E: return 10;
+        case BK4819_REG_40: return 11;
+        case BK4819_REG_43: return 12;
+        case BK4819_REG_46: return 13;
+        case BK4819_REG_47: return 14;
+        case BK4819_REG_48: return 15;
+        case BK4819_REG_49: return 16;
+        case (BK4819_REGISTER_t)0x54: return 17;
+        case (BK4819_REGISTER_t)0x55: return 18;
+        case BK4819_REG_73: return 19;
+        case BK4819_REG_7B: return 20;
+        case BK4819_REG_7D: return 21;
+        case BK4819_REG_78: return 22;
+        default: return -1;
+    }
+}
+
+static void BK4819_InvalidateRegisterCache(void)
+{
+    gBK4819_RegisterCacheValid = 0;
+}
 
 static inline void CS_Assert()
 {
@@ -94,10 +151,11 @@ void BK4819_Init(void)
     SCL_Set();
     SDA_Set();
 
+    BK4819_InvalidateRegisterCache();
     BK4819_WriteRegister(BK4819_REG_00, 0x8000);
     BK4819_WriteRegister(BK4819_REG_00, 0x0000);
 
-    BK4819_WriteRegister(BK4819_REG_37, 0x1D0F);
+    BK4819_WriteRegister(BK4819_REG_37, BK4829_REG_37_ACTIVE);
     BK4819_WriteRegister(BK4819_REG_36, 0x0022);
 
     BK4819_InitAGC(false);
@@ -155,8 +213,8 @@ void BK4819_Init(void)
     BK4819_WriteRegister(BK4819_REG_09, 0xF09F);  // 9F
 #endif
 
-    BK4819_WriteRegister(BK4819_REG_1F, 0x5454);
-    BK4819_WriteRegister(BK4819_REG_3E, 0xA037);
+    BK4819_WriteRegister(BK4819_REG_1F, BK4829_REG_1F_PLL_TUNING);
+    BK4819_WriteRegister(BK4819_REG_3E, BK4829_REG_3E_VCO_TUNING);
 
     gBK4819_GpioOutState = 0x9000;
 
@@ -210,6 +268,14 @@ uint16_t BK4819_ReadRegister(BK4819_REGISTER_t Register)
 
 void BK4819_WriteRegister(BK4819_REGISTER_t Register, uint16_t Data)
 {
+    const int8_t cacheIndex = BK4819_GetCacheIndex(Register);
+    if (cacheIndex >= 0) {
+        const uint32_t cacheBit = 1u << (uint8_t)cacheIndex;
+        if ((gBK4819_RegisterCacheValid & cacheBit) != 0u &&
+            gBK4819_RegisterCache[(uint8_t)cacheIndex] == Data)
+            return;
+    }
+
     CS_Release();
     SCL_Reset();
 
@@ -230,6 +296,15 @@ void BK4819_WriteRegister(BK4819_REGISTER_t Register, uint16_t Data)
 
     SCL_Set();
     SDA_Set();
+
+    if (Register == BK4819_REG_00) {
+        /* Any chip reset makes every cached configuration value stale. */
+        BK4819_InvalidateRegisterCache();
+    } else if (cacheIndex >= 0) {
+        const uint32_t cacheBit = 1u << (uint8_t)cacheIndex;
+        gBK4819_RegisterCache[(uint8_t)cacheIndex] = Data;
+        gBK4819_RegisterCacheValid |= cacheBit;
+    }
 }
 
 void BK4819_WriteU8(uint8_t Data)
@@ -307,60 +382,23 @@ void BK4819_SetAGC(bool enable)
 
 void BK4819_InitAGC(bool amModulation)
 {
-    // REG_10, REG_11, REG_12 REG_13, REG_14
-    //
-    // Rx AGC Gain Table[]. (Index Max->Min is 3,2,1,0,-1)
-    //
-    // <15:10> ???
-    //
-    // <9:8>   LNA Gain Short
-    //         3 =   0dB  <<<       1o11                read from spectrum          reference manual
-    //         2 =                  -24dB               -19                          -11
-    //         1 =                  -30dB               -24                          -16
-    //         0 =                  -33dB               -28                          -19
-    //
-    // <7:5>   LNA Gain
-    //         7 =   0dB
-    //         6 =  -2dB
-    //         5 =  -4dB
-    //         4 =  -6dB
-    //         3 =  -9dB
-    //         2 = -14dB <<<
-    //         1 = -19dB
-    //         0 = -24dB
-    //
-    // <4:3>   MIXER Gain
-    //         3 =   0dB <<<
-    //         2 =  -3dB
-    //         1 =  -6dB
-    //         0 =  -8dB
-    //
-    // <2:0>   PGA Gain
-    //         7 =   0dB
-    //         6 =  -3dB <<<
-    //         5 =  -6dB
-    //         4 =  -9dB
-    //         3 = -15dB
-    //         2 = -21dB
-    //         1 = -27dB
-    //         0 = -33dB
-    //
+    (void)amModulation;
 
-    BK4819_WriteRegister(BK4819_REG_13, 0x03BE);  // 0x03BE / 000000 11 101 11 110 /  -7dB
-    BK4819_WriteRegister(BK4819_REG_12, 0x037B);  // 0x037B / 000000 11 011 11 011 / -24dB
-    BK4819_WriteRegister(BK4819_REG_11, 0x027B);  // 0x027B / 000000 10 011 11 011 / -43dB
-    BK4819_WriteRegister(BK4819_REG_10, 0x007A);  // 0x007A / 000000 00 011 11 010 / -58dB
-    if(amModulation) {
-        BK4819_WriteRegister(BK4819_REG_14, 0x0000);
-        BK4819_WriteRegister(BK4819_REG_49, (0 << 14) | (50 << 7) | (32 << 0));
-    }
-    else{
-        BK4819_WriteRegister(BK4819_REG_14, 0x0019);  // 0x0019 / 000000 00 000 11 001 / -79dB
-        BK4819_WriteRegister(BK4819_REG_49, (0 << 14) | (84 << 7) | (56 << 0)); //0x2A38 / 00 1010100 0111000 / 84, 56
-    }
-
-    BK4819_WriteRegister(BK4819_REG_7B, 0x8420);
-
+    /*
+     * BK4829 AGC table used by KA52.  Compared with the legacy BK4819 table
+     * this keeps the weak-signal end hotter while retaining essentially the
+     * same minimum-gain floor.  Dondji's MAN/FAST/NORM/SLOW software AGC and
+     * AM-fix paths remain independent of this chip-auto-AGC table.
+     *
+     * Index Max -> Min: 3, 2, 1, 0, -1
+     */
+    BK4819_WriteRegister(BK4819_REG_10, 0x0318);
+    BK4819_WriteRegister(BK4819_REG_11, 0x033A);
+    BK4819_WriteRegister(BK4819_REG_12, 0x03DB);
+    BK4819_WriteRegister(BK4819_REG_13, 0x03DF);
+    BK4819_WriteRegister(BK4819_REG_14, 0x0210);
+    BK4819_WriteRegister(BK4819_REG_49, 0x2AB2);
+    BK4819_WriteRegister(BK4819_REG_7B, 0x73DC);
 }
 
 int8_t BK4819_GetRxGain_dB(void)
@@ -824,21 +862,8 @@ void BK4819_SetRegValue(RegisterSpec s, uint16_t v) {
 
 void BK4819_RX_TurnOn(void)
 {
-    // DSP Voltage Setting = 1
-    // ANA LDO = 2.7v
-    // VCO LDO = 2.7v
-    // RF LDO  = 2.7v
-    // PLL LDO = 2.7v
-    // ANA LDO bypass
-    // VCO LDO bypass
-    // RF LDO  bypass
-    // PLL LDO bypass
-    // Reserved bit is 1 instead of 0
-    // Enable  DSP
-    // Enable  XTAL
-    // Enable  Band Gap
-    //
-    BK4819_WriteRegister(BK4819_REG_37, 0x1F0F);  // 0001111100001111
+    // BK4829 active RX power/LDO profile from KA52's BK4829 register set.
+    BK4819_WriteRegister(BK4819_REG_37, BK4829_REG_37_RX_ACTIVE);
 
     // Turn off everything
     BK4819_WriteRegister(BK4819_REG_30, 0);
@@ -1167,7 +1192,7 @@ void BK4819_PrepareTransmit(void)
 
 void BK4819_TxOn_Beep(void)
 {
-    BK4819_WriteRegister(BK4819_REG_37, 0x1D0F);
+    BK4819_WriteRegister(BK4819_REG_37, BK4829_REG_37_ACTIVE);
     BK4819_WriteRegister(BK4819_REG_52, 0x028F);
     BK4819_WriteRegister(BK4819_REG_30, 0x0000);
     BK4819_WriteRegister(BK4819_REG_30, 0xC1FE);

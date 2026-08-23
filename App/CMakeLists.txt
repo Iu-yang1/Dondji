@@ -160,7 +160,20 @@ enable_feature(ENABLE_CHINESE)
 enable_feature(ENABLE_CN_RF
     rf_profile.c
     app/cw_keyer.c
+    app/dsb_tx.c
 )
+
+if(ENABLE_CN_RF)
+    # app/app.c still contains the original 4 kHz DSB envelope service. Redirect
+    # only those calls at compile time so TIM3 owns REG64/REG36 at 8 kHz without
+    # changing the normal BK4829 API used by the rest of the firmware.
+    set_property(SOURCE app/app.c APPEND PROPERTY COMPILE_DEFINITIONS
+        BK4819_GetVoiceAmplitudeOut=DSB_TX_LegacyGetVoiceAmplitude
+        BK4819_SetupPowerAmplifier=DSB_TX_LegacySetupPowerAmplifier
+        RADIO_SendEndOfTransmission=DSB_TX_LegacySendEndOfTransmission
+    )
+endif()
+
 enable_feature(ENABLE_CUSTOM_MENU_LAYOUT)
 enable_feature(ENABLE_KEEP_MEM_NAME)
 enable_feature(ENABLE_WIDE_RX)

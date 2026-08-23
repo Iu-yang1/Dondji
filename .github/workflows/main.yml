@@ -27,7 +27,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Compile firmware
       shell: bash
@@ -37,7 +37,7 @@ jobs:
         ./compile-with-docker.sh "${{ inputs.preset || 'Custom' }}"
 
     - name: Upload firmware artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: firmware-${{ inputs.preset || 'Custom' }}
         path: build/**/*.bin

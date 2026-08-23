@@ -8,6 +8,7 @@
 #include "py32f0xx.h"
 #include "py32f071_ll_bus.h"
 #include "py32f071_ll_gpio.h"
+#include "py32f071_ll_rcc.h"
 
 #define DSB_TX_SAMPLE_RATE_HZ 8000u
 #define DSB_TX_PIN_CSN        LL_GPIO_PIN_9
@@ -121,6 +122,26 @@ static void fastWriteRegisterLocked(BK4819_REGISTER_t reg, uint16_t data)
     LL_GPIO_SetOutputPin(GPIOB, DSB_TX_PIN_SDA);
 }
 
+static uint32_t getTimer3ClockHz(void)
+{
+    /* PY32F071 clocks general-purpose timers from PCLK when APB1=/1, otherwise
+     * from 2*PCLK. SystemCoreClock is HCLK in this firmware, so derive TIM_PCLK
+     * from the bootloader-preserved APB1 divider rather than assuming /1. */
+    switch (LL_RCC_GetAPB1Prescaler()) {
+    case LL_RCC_APB1_DIV_1:
+    case LL_RCC_APB1_DIV_2:
+        return SystemCoreClock;
+    case LL_RCC_APB1_DIV_4:
+        return SystemCoreClock / 2u;
+    case LL_RCC_APB1_DIV_8:
+        return SystemCoreClock / 4u;
+    case LL_RCC_APB1_DIV_16:
+        return SystemCoreClock / 8u;
+    default:
+        return SystemCoreClock;
+    }
+}
+
 static void stopTimerFromIrq(void)
 {
     TIM3->DIER = 0u;
@@ -194,14 +215,15 @@ void DSB_TX_Start(uint8_t peakBias, uint32_t frequency)
     TIM3->CR1 = 0u;
     TIM3->DIER = 0u;
     TIM3->PSC = 0u;
-    TIM3->ARR = (SystemCoreClock / DSB_TX_SAMPLE_RATE_HZ) - 1u;
+    TIM3->ARR = (getTimer3ClockHz() / DSB_TX_SAMPLE_RATE_HZ) - 1u;
     TIM3->CNT = 0u;
     TIM3->EGR = TIM_EGR_UG;
     TIM3->SR = 0u;
 
-    /* The fast ISR may pre-empt foreground bit-bang SPI.  It checks CSN first
-     * and skips the sample if the normal driver already owns the bus. */
-    NVIC_SetPriority(TIM3_IRQn, 1u);
+    /* Priority 0 makes each short fast-SPI transaction atomic with respect to
+     * ordinary maskable firmware IRQs. If foreground SPI was already active,
+     * the CSN guard above simply drops that 125 us envelope sample. */
+    NVIC_SetPriority(TIM3_IRQn, 0u);
     NVIC_ClearPendingIRQ(TIM3_IRQn);
     NVIC_EnableIRQ(TIM3_IRQn);
 

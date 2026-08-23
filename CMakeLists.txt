@@ -91,9 +91,19 @@ target_link_libraries(${EXE_NAME} ${TOOLCHAIN_LINK_LIBRARIES})
 if(ENABLE_LTO)
     target_compile_options(${EXE_NAME} PRIVATE -flto=auto)
     if(ENABLE_CN_RF)
-        # CN_RF 接近 118 KiB 镜像上限；单 LTO 分区允许跨源文件做完整尺寸去重。
-        target_compile_options(${EXE_NAME} PRIVATE -flto-partition=one)
-        target_link_options(${EXE_NAME} PRIVATE -flto-partition=one)
+        # CN_RF is very close to the 118 KiB image limit. Keep a single LTO
+        # partition for whole-program size optimisation, drop runtime unwind
+        # tables that are unused by this bare-metal C firmware, and let ld sort
+        # input sections by alignment to minimise padding between sections.
+        target_compile_options(${EXE_NAME} PRIVATE
+            -flto-partition=one
+            -fno-unwind-tables
+            -fno-asynchronous-unwind-tables
+        )
+        target_link_options(${EXE_NAME} PRIVATE
+            -flto-partition=one
+            -Wl,--sort-section=alignment
+        )
     endif()
 endif()
 

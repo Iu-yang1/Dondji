@@ -29,6 +29,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Show build revision
+      shell: bash
+      run: |
+        echo "GITHUB_REF=$GITHUB_REF"
+        echo "GITHUB_SHA=$GITHUB_SHA"
+        echo "Checked out HEAD=$(git rev-parse HEAD)"
+        git log -1 --oneline
+
     - name: Compile firmware
       shell: bash
       run: |

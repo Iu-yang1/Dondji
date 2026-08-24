@@ -59,6 +59,7 @@ void RF_PROFILE_SetModeDefault(struct VFO_Info_t *vfo);
 void RF_PROFILE_ApplyRx(const struct VFO_Info_t *vfo);
 void RF_PROFILE_ApplyTx(const struct VFO_Info_t *vfo);
 void RF_PROFILE_TimeSlice10ms(void);
+uint8_t RF_PROFILE_GetRuntimeGainIndex(const struct VFO_Info_t *vfo);
 bool RF_PROFILE_AgcUsesRfGain(uint8_t agc);
 bool RF_PROFILE_IsWideBandwidth(uint8_t bandwidth);
 uint8_t RF_PROFILE_BandwidthToMenu(uint8_t bandwidth);

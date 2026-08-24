@@ -72,6 +72,19 @@ static const uint16_t kAgcStockGain[5] = {
     0x0318, 0x033A, 0x03DB, 0x03DF, 0x0210
 };
 
+typedef struct {
+    uint8_t index;
+    uint8_t sampleTicks;
+    uint8_t hangSamples;
+    uint8_t releaseSamples;
+} RF_SoftwareAgcState_t;
+
+static RF_SoftwareAgcState_t gAgcState[2] = {
+    {.index = 15u},
+    {.index = 15u},
+};
+static uint8_t gNoiseBlankTicks;
+
 static uint16_t applyLnaBoost(uint16_t gainWord, bool enable)
 {
     if (enable) {
@@ -89,16 +102,26 @@ static void applyHardwareAgcTable(bool boost)
         BK4819_WriteRegister(kAgcRegisters[i], applyLnaBoost(kAgcStockGain[i], boost));
 }
 
+static uint8_t vfoIndex(const VFO_Info_t *vfo)
+{
+    return vfo == &gEeprom.VfoInfo[1] ? 1u : 0u;
+}
+
+static void resetSoftwareAgc(const VFO_Info_t *vfo)
+{
+    RF_SoftwareAgcState_t *state = &gAgcState[vfoIndex(vfo)];
+    state->index = vfo->RfProfile.rfGain;
+    state->sampleTicks = 0u;
+    state->hangSamples = 0u;
+    state->releaseSamples = 0u;
+}
+
 /* REG_40[11:0] 是公开文档定义的 FM deviation 控制字。0 表示保持 Dondji
  * 原标准值；1..9 是保守的工程调节字，均低于芯片字段上限。控制字不是
  * 物理 Hz，发射占用带宽必须用频偏仪/频谱仪确认。 */
 static const uint16_t kDeviationReg40[10] = {
     0, 500, 600, 700, 750, 800, 850, 900, 1000, 1100
 };
-
-static uint8_t gAgcGainIndex[2] = {15, 15};
-static uint8_t gAgcTicks;
-static uint8_t gNoiseBlankTicks;
 
 static uint8_t crc8(const uint8_t *data, uint16_t size)
 {
@@ -288,19 +311,22 @@ uint8_t RF_PROFILE_BandwidthToMenu(uint8_t bandwidth)
     return 1u; /* W23：损坏/未知值的保守显示回退。 */
 }
 
+uint8_t RF_PROFILE_GetRuntimeGainIndex(const VFO_Info_t *vfo)
+{
+    return gAgcState[vfoIndex(vfo)].index;
+}
+
 void RF_PROFILE_ApplyRx(const VFO_Info_t *vfo)
 {
     const RF_Profile_t *p = &vfo->RfProfile;
-    const uint8_t vfoIndex = vfo == &gEeprom.VfoInfo[1] ? 1u : 0u;
     BK4819_SetFilterBandwidthRaw(kBandwidthReg43[p->bandwidth]);
     BK4819_SetAfcLevel(p->afc);
     if (p->agc == RF_AGC_AUTO) {
         applyHardwareAgcTable(p->rfBoost != 0u);
         BK4819_SetAGC(true);
     } else {
-        const uint8_t index = p->rfGain;
-        gAgcGainIndex[vfoIndex] = index;
-        BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[index], p->rfBoost != 0u));
+        resetSoftwareAgc(vfo);
+        BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[p->rfGain], p->rfBoost != 0u));
     }
 }
 
@@ -316,9 +342,16 @@ void RF_PROFILE_ApplyTx(const VFO_Info_t *vfo)
 void RF_PROFILE_TimeSlice10ms(void)
 {
     const RF_Profile_t *p;
-    uint8_t interval;
-    uint8_t vfoIndex;
-    if (gCurrentFunction == FUNCTION_TRANSMIT || gCurrentFunction == FUNCTION_POWER_SAVE || gRxIdleMode)
+    RF_SoftwareAgcState_t *state;
+    uint8_t attackSteps;
+    uint8_t releasePeriod;
+    uint8_t hangSamples;
+    uint8_t ceiling;
+    uint8_t oldIndex;
+    int16_t rssi;
+
+    if (gRxVfo == NULL || gCurrentFunction == FUNCTION_TRANSMIT ||
+        gCurrentFunction == FUNCTION_POWER_SAVE || gRxIdleMode)
         return;
 #ifdef ENABLE_WFM
     if (gRxVfo->Modulation == MODULATION_WFM)
@@ -348,18 +381,62 @@ void RF_PROFILE_TimeSlice10ms(void)
             gNoiseBlankTicks = 2u;
         }
     }
+
     if (p->agc < RF_AGC_FAST || p->agc > RF_AGC_SLOW)
         return;
-    interval = p->agc == RF_AGC_FAST ? 2u : (p->agc == RF_AGC_NORM ? 8u : 25u);
-    if (++gAgcTicks < interval)
+
+    state = &gAgcState[vfoIndex(gRxVfo)];
+    ceiling = p->rfGain;
+    if (state->index > ceiling) {
+        state->index = ceiling;
+        BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[state->index], p->rfBoost != 0u));
+    }
+
+    /* 20 ms RSSI sample period. All modes attack quickly; hang/release provide
+     * the intended FAST/NORM/SLOW character and reduce audible SSB/CW pumping. */
+    if (++state->sampleTicks < 2u)
         return;
-    gAgcTicks = 0;
-    vfoIndex = gRxVfo == &gEeprom.VfoInfo[1] ? 1u : 0u;
-    const uint8_t ceiling = p->rfGain;
-    const int16_t rssi = BK4819_GetRSSI_dBm();
-    if (rssi > -65 && gAgcGainIndex[vfoIndex] > 0u)
-        gAgcGainIndex[vfoIndex]--;
-    else if (rssi < -90 && gAgcGainIndex[vfoIndex] < ceiling)
-        gAgcGainIndex[vfoIndex]++;
-    BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[gAgcGainIndex[vfoIndex]], p->rfBoost != 0u));
+    state->sampleTicks = 0u;
+
+    switch (p->agc) {
+    case RF_AGC_FAST:
+        attackSteps = 2u;
+        hangSamples = 2u;     /* 40 ms */
+        releasePeriod = 1u;   /* 20 ms/step */
+        break;
+    case RF_AGC_SLOW:
+        attackSteps = 1u;
+        hangSamples = 25u;    /* 500 ms */
+        releasePeriod = 12u;  /* 240 ms/step */
+        break;
+    case RF_AGC_NORM:
+    default:
+        attackSteps = 1u;
+        hangSamples = 10u;    /* 200 ms */
+        releasePeriod = 4u;   /* 80 ms/step */
+        break;
+    }
+
+    rssi = BK4819_GetRSSI_dBm();
+    oldIndex = state->index;
+
+    if (rssi > -65) {
+        state->index = state->index > attackSteps ?
+                       (uint8_t)(state->index - attackSteps) : 0u;
+        state->hangSamples = hangSamples;
+        state->releaseSamples = 0u;
+    } else if (state->hangSamples != 0u) {
+        state->hangSamples--;
+        state->releaseSamples = 0u;
+    } else if (rssi < -90 && state->index < ceiling) {
+        if (++state->releaseSamples >= releasePeriod) {
+            state->releaseSamples = 0u;
+            state->index++;
+        }
+    } else {
+        state->releaseSamples = 0u;
+    }
+
+    if (state->index != oldIndex)
+        BK4819_SetFixedRxGain(applyLnaBoost(kGainReg13[state->index], p->rfBoost != 0u));
 }

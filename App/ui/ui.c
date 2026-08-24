@@ -7,11 +7,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <assert.h>
@@ -20,6 +20,9 @@
 #include "app/chFrScanner.h"
 #include "app/dtmf.h"
 #include "app/menu.h"
+#ifdef ENABLE_CN_RF
+    #include "app/cn_rf_ops.h"
+#endif
 #ifdef ENABLE_FMRADIO
     #include "app/fm.h"
 #endif
@@ -51,7 +54,15 @@ bool              gAskToDelete;
 
 void (*UI_DisplayFunctions[])(void) = {
     [DISPLAY_MAIN] = &UI_DisplayMain,
+#ifdef ENABLE_CN_RF
+    /* MENU_VOL pages 6/7 are CN_RF-owned screens. Point at the wrapper
+     * explicitly instead of relying on ld --wrap to rewrite a function
+     * pointer initializer; otherwise these pages can fall through to the
+     * stock MENU_VOL renderer, which only implements pages 0..5. */
+    [DISPLAY_MENU] = &__wrap_UI_DisplayMenu,
+#else
     [DISPLAY_MENU] = &UI_DisplayMenu,
+#endif
     [DISPLAY_SCANNER] = &UI_DisplayScanner,
 
 #ifdef ENABLE_FMRADIO

@@ -356,8 +356,10 @@ static void drawOps(void)
     else
         strcpy(text, "SAT TX:B  RX:A");
     drawLine(text, 38u);
-    drawLine("1/7 RIT  2/8 XIT", 48u);
-    drawLine("3 SAT   0 CLR", 56u);
+    /* F4HWN blits framebuffer rows 0..6. Keep the two help rows in
+     * rows 5 and 6 rather than y=48/56 (rows 6/7), where the latter is lost. */
+    drawLine("1/7 RIT  2/8 XIT", 46u);
+    drawLine("3 SAT   0 CLR", 54u);
 }
 
 void CN_RF_OPS_DrawMenuPage(void)

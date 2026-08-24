@@ -77,12 +77,13 @@ endif()
 message("EXE_NAME = " ${EXE_NAME})
 
 # CN_RF is the base for the satellite-oriented build. Keep the legacy RF
-# spectrum/waterfall paths out of this image, but preserve the original F4HWN
-# TX audio scope used by MicBar=Bar.
+# spectrum/waterfall paths out of this image, preserve the original F4HWN TX
+# audio scope, and expose the already-existing lightweight RF telemetry commands.
 if(ENABLE_CN_RF)
     set(ENABLE_SPECTRUM OFF)
     set(ENABLE_FEAT_F4HWN_SPECTRUM OFF)
-    message("CN_RF: RF spectrum disabled; TX audio scope preserved")
+    set(ENABLE_EXTRA_UART_CMD ON)
+    message("CN_RF: RF spectrum disabled; TX audio scope and RF telemetry enabled")
 endif()
 
 add_executable(${EXE_NAME})

@@ -468,7 +468,11 @@ const t_menu_item MenuList[] =
 #endif
     {"VOX",         MENU_VOX           },
 #ifdef ENABLE_FEAT_F4HWN
+#ifdef ENABLE_CN_RF
+    {"Sys/RF",      MENU_VOL           }, // SysInf + RF monitor/RF-SAT pages
+#else
     {"SysInf",      MENU_VOL           }, // was "VOL"
+#endif
 #else
     {"BatVol",      MENU_VOL           }, // was "VOL"
 #endif
@@ -1503,7 +1507,11 @@ static void UI_MENU_DrawLevel2SplitLayout(uint8_t menu_count, char *String)
         }
         else if (UI_MENU_GetCurrentMenuId() == MENU_VOL)
         {
+#ifdef ENABLE_CN_RF
+            UI_PrintStringSmallAtPixel("\xe7\xb3\xbb\xe7\xbb\x9f/RF", 0, left_end, 10u, 36u, 3u);
+#else
             UI_PrintStringSmallAtPixel("\xe7\xb3\xbb\xe7\xbb\x9f\xe4\xbf\xa1\xe6\x81\xaf", 0, left_end, 10u, 36u, 3u);
+#endif
         }
         else
         {
@@ -1536,7 +1544,11 @@ static void UI_MENU_DrawCccMenuChrome(const t_menu_item *item)
 #ifdef ENABLE_CHINESE
     if (item != NULL && item->menu_id == MENU_VOL && gUiLanguage == UI_LANGUAGE_CN)
     {
+#ifdef ENABLE_CN_RF
+        title = "\xe7\xb3\xbb\xe7\xbb\x9f/RF<\xe5\x8f\xae\xe5\x92\x9a\xe9\xb8\xa1>";
+#else
         title = "\xe7\xb3\xbb\xe7\xbb\x9f\xe4\xbf\xa1\xe6\x81\xaf<\xe5\x8f\xae\xe5\x92\x9a\xe9\xb8\xa1>";
+#endif
     }
     /* Title band +3px down vs previous 8..15 */
     UI_PrintStringSmallAtPixel(title, 2, 2, 11, 18, 0u);
@@ -2132,10 +2144,7 @@ void UI_DisplayMenu(void)
                 sprintf(String, "AFC-%u", (unsigned)gSubMenuSelection);
             break;
         case MENU_RF_BOOST:
-            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
-                strcpy(String, SUBV("N/A (AUTO)", "\xe8\x87\xaa\xe5\x8a\xa8\xe6\x97\xa0\xe6\x95\x88"));
-            else
-                strcpy(String, SUBV(gSubMenu_OFF_ON[gSubMenuSelection], gSubMenu_OFF_ON_CN[gSubMenuSelection]));
+            strcpy(String, SUBV(gSubMenu_OFF_ON[gSubMenuSelection], gSubMenu_OFF_ON_CN[gSubMenuSelection]));
             break;
         case MENU_SET_DEV:
             sprintf(String, "DEV-%u", (unsigned)gSubMenuSelection);

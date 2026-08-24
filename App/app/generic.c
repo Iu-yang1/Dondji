@@ -131,6 +131,14 @@ void GENERIC_Key_PTT(bool bKeyPressed)
 
     // PTT pressed
 
+#if defined(ENABLE_CN_RF) && defined(ENABLE_WFM)
+    /* WFM is implemented by the independent BK1080 receive path. Never fall
+     * through to BK4829 TX; this also makes RIT/XIT/WFM ownership explicit. */
+    if (gTxVfo != NULL && gTxVfo->Modulation == MODULATION_WFM) {
+        gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+        goto cancel_tx;
+    }
+#endif
 
     if (SCANNER_IsScanning()) { 
         SCANNER_Stop(); // CTCSS/CDCSS scanning .. stop

@@ -250,7 +250,7 @@ void DSB_TX_Stop(void)
     gDsbTxLastPaWord = 0xFFFFu;
 }
 
-uint16_t DSB_TX_LegacyGetVoiceAmplitude(void)
+uint16_t __wrap_BK4819_GetVoiceAmplitudeOut(void)
 {
     if (isDsbTransmitContext()) {
         DSB_TX_Start(gCurrentVfo->TXP_CalculatedSetting, gCurrentVfo->pTX->Frequency);
@@ -258,10 +258,10 @@ uint16_t DSB_TX_LegacyGetVoiceAmplitude(void)
     }
 
     DSB_TX_Stop();
-    return BK4819_GetVoiceAmplitudeOut();
+    return __real_BK4819_GetVoiceAmplitudeOut();
 }
 
-void DSB_TX_LegacySetupPowerAmplifier(uint8_t bias, uint32_t frequency)
+void __wrap_BK4819_SetupPowerAmplifier(uint8_t bias, uint32_t frequency)
 {
     if (gDsbTxActive && isDsbTransmitContext() &&
         gCurrentVfo != NULL && frequency == gCurrentVfo->pTX->Frequency) {
@@ -270,11 +270,11 @@ void DSB_TX_LegacySetupPowerAmplifier(uint8_t bias, uint32_t frequency)
         return;
     }
 
-    BK4819_SetupPowerAmplifier(bias, frequency);
+    __real_BK4819_SetupPowerAmplifier(bias, frequency);
 }
 
-void DSB_TX_LegacySendEndOfTransmission(void)
+void __wrap_RADIO_SendEndOfTransmission(void)
 {
     DSB_TX_Stop();
-    RADIO_SendEndOfTransmission();
+    __real_RADIO_SendEndOfTransmission();
 }

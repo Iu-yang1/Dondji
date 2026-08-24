@@ -972,7 +972,11 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
 
         case MENU_VOL:
 #ifdef ENABLE_FEAT_F4HWN
+#ifdef ENABLE_CN_RF
+            *pMax = 7; /* 0..5 SysInf, 6 RF monitor, 7 RF/SAT ops */
+#else
             *pMax = 5;
+#endif
 #else
             *pMax = 0;
 #endif
@@ -1394,8 +1398,6 @@ void MENU_AcceptSetting(void)
             gRequestSaveChannel = 1;
             return;
         case MENU_RF_BOOST:
-            if (!RF_PROFILE_AgcUsesRfGain(gTxVfo->RfProfile.agc))
-                return;
             gTxVfo->RfProfile.rfBoost = gSubMenuSelection;
             gFlagReconfigureVfos = true;
             gRequestSaveChannel = 1;

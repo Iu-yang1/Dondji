@@ -161,16 +161,24 @@ enable_feature(ENABLE_CN_RF
     rf_profile.c
     app/cw_keyer.c
     app/dsb_tx.c
+    app/cn_rf_ops.c
+    app/cn_rf_menu_bridge.c
 )
 
 if(ENABLE_CN_RF)
-    # app/app.c still contains the original 4 kHz DSB envelope service. Redirect
-    # only those calls at compile time so TIM3 owns REG64/REG36 at 8 kHz without
-    # changing the normal BK4829 API used by the rest of the firmware.
-    set_property(SOURCE app/app.c APPEND PROPERTY COMPILE_DEFINITIONS
-        BK4819_GetVoiceAmplitudeOut=DSB_TX_LegacyGetVoiceAmplitude
-        BK4819_SetupPowerAmplifier=DSB_TX_LegacySetupPowerAmplifier
-        RADIO_SendEndOfTransmission=DSB_TX_LegacySendEndOfTransmission
+    # These hooks cross the App INTERFACE-library boundary. Source-local compile
+    # definitions do not reliably propagate to the final executable's source
+    # compilation, so use GNU ld --wrap explicitly. This keeps the large legacy
+    # sources untouched while making ownership visible at link time.
+    target_link_options(App INTERFACE
+        "-Wl,--wrap=BK4819_GetVoiceAmplitudeOut"
+        "-Wl,--wrap=BK4819_SetupPowerAmplifier"
+        "-Wl,--wrap=RADIO_SendEndOfTransmission"
+        "-Wl,--wrap=MENU_ProcessKeys"
+        "-Wl,--wrap=UI_DisplayMenu"
+        "-Wl,--wrap=RF_PROFILE_ApplyRx"
+        "-Wl,--wrap=RF_PROFILE_ApplyTx"
+        "-Wl,--wrap=RF_PROFILE_TimeSlice10ms"
     )
 endif()
 

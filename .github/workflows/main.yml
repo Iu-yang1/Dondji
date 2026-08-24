@@ -2,7 +2,7 @@ name: Build Firmware
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, motorola_r7 ]
   workflow_dispatch:
     inputs:
       preset:
@@ -21,9 +21,14 @@ on:
           - Game
           - All
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      BUILD_PRESET: ${{ github.ref_name == 'motorola_r7' && 'CN_RF' || inputs.preset || 'Custom' }}
 
     steps:
     - name: Checkout code
@@ -34,6 +39,7 @@ jobs:
       run: |
         echo "GITHUB_REF=$GITHUB_REF"
         echo "GITHUB_SHA=$GITHUB_SHA"
+        echo "BUILD_PRESET=$BUILD_PRESET"
         echo "Checked out HEAD=$(git rev-parse HEAD)"
         git log -1 --oneline
 
@@ -42,13 +48,13 @@ jobs:
       run: |
         set -euo pipefail
         chmod +x compile-with-docker.sh
-        ./compile-with-docker.sh "${{ inputs.preset || 'Custom' }}"
+        ./compile-with-docker.sh "$BUILD_PRESET" 2>&1 | tee cn-rf-build.log
 
     - name: Upload linker diagnostics
       if: always()
       uses: actions/upload-artifact@v6
       with:
-        name: linker-diagnostics-${{ inputs.preset || 'Custom' }}
+        name: linker-diagnostics-${{ env.BUILD_PRESET }}
         path: |
           build/**/*.map
           build/**/*.elf
@@ -58,6 +64,23 @@ jobs:
       if: success()
       uses: actions/upload-artifact@v6
       with:
-        name: firmware-${{ inputs.preset || 'Custom' }}
+        name: firmware-${{ env.BUILD_PRESET }}
         path: build/**/*.bin
         if-no-files-found: error
+
+    - name: Publish motorola_r7 build log
+      if: always() && github.ref_name == 'motorola_r7'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cp cn-rf-build.log /tmp/CN_RF.txt
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git switch --orphan ci-log
+        git rm -rf . || true
+        mkdir -p latest
+        cp /tmp/CN_RF.txt latest/CN_RF.txt
+        printf '%s\n' "$GITHUB_SHA" > latest/sha.txt
+        git add latest/CN_RF.txt latest/sha.txt
+        git commit -m "ci: publish CN_RF build $GITHUB_SHA"
+        git push --force origin HEAD:"ci-results/$GITHUB_SHA"

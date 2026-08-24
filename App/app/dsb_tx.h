@@ -8,10 +8,13 @@ bool DSB_TX_IsActive(void);
 void DSB_TX_Start(uint8_t peakBias, uint32_t frequency);
 void DSB_TX_Stop(void);
 
-/* app/app.c compatibility entry points.  That file's legacy 4 kHz DSB hook is
- * redirected to these names only for CN_RF so the TIM3 engine owns REG64/36. */
-uint16_t DSB_TX_LegacyGetVoiceAmplitude(void);
-void DSB_TX_LegacySetupPowerAmplifier(uint8_t bias, uint32_t frequency);
-void DSB_TX_LegacySendEndOfTransmission(void);
+/* GNU ld --wrap entry points used only by CN_RF. */
+uint16_t __wrap_BK4819_GetVoiceAmplitudeOut(void);
+void __wrap_BK4819_SetupPowerAmplifier(uint8_t bias, uint32_t frequency);
+void __wrap_RADIO_SendEndOfTransmission(void);
+
+uint16_t __real_BK4819_GetVoiceAmplitudeOut(void);
+void __real_BK4819_SetupPowerAmplifier(uint8_t bias, uint32_t frequency);
+void __real_RADIO_SendEndOfTransmission(void);
 
 #endif

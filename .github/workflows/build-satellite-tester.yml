@@ -36,7 +36,7 @@ jobs:
       - name: Syntax and protocol tests
         shell: pwsh
         run: |
-          python -m py_compile tools/satellite_test/*.py
+          python -m compileall -q tools/satellite_test
           Push-Location tools/satellite_test
           python -m unittest -v
           Pop-Location

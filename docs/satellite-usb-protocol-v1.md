@@ -1,5 +1,7 @@
 # Dondji USB Satellite Protocol v1
 
+Current protocol version: **1.1**. Major version 1 keeps the same framing and realtime `SAT_UPDATE` layout; minor 1 adds status telemetry and tightens session validation.
+
 Dondji remains the RF executor. Orbit propagation, transponder mapping and Doppler calculation stay on the host (for example Look4Sat-FT4). The radio receives final corrected RX/TX frequencies and lightweight display telemetry.
 
 ## Transport
@@ -53,7 +55,7 @@ The C wire structures live in `App/app/satellite_protocol.h` and are the normati
 
 `SAT_BEGIN` snapshots the active VFO and temporary receive-mode state, disables dual-watch/cross-band for deterministic RF ownership, and configures one VFO with independent RX and TX target frequencies. It does not write these temporary values to persistent settings.
 
-A second `SAT_BEGIN` is rejected while a session is active. `SAT_END` restores the snapshot. Starting a session is also rejected while transmitting, scanning, or another serial configuration session is active.
+`session_id` must be nonzero. ID 0 is reserved for a wildcard `SAT_STATUS` request that asks for the currently active session. A second `SAT_BEGIN` is rejected while a session is active. `SAT_END` restores the snapshot. Starting a session is also rejected while transmitting, scanning, or another serial configuration session is active.
 
 ## Realtime update model
 
@@ -69,6 +71,20 @@ A second `SAT_BEGIN` is rejected while a session is active. `SAT_END` restores t
 The host normally sends 10-20 updates/s. `SAT_HELLO` advertises a protocol capability of 100 updates/s. Dondji applies frequency changes directly through BK4829 REG38/REG39 instead of running a full RF reconfiguration for every Doppler step.
 
 `SAT_UPDATE` does not generate an ACK by default. Set `SAT_UPDATE_ACK_REQUEST` when periodic applied-state confirmation is desired.
+
+## Status telemetry
+
+Protocol 1.1 keeps `SAT_STATUS` inside one USB Full-Speed packet and reports:
+
+- received and applied sequence numbers;
+- accumulated error flags;
+- currently applied RF frequency and current TX target;
+- age of the last valid update and measured update rate;
+- CRC error count;
+- dropped-update count inferred from sequence gaps;
+- link state, PTT state, and whether the satellite UI is visible.
+
+A bad nonzero session ID still returns the normal fixed-size `SAT_STATUS` reply with `SAT_ERR_BAD_SESSION`, so host parsers do not need a special short-error packet path.
 
 ## Physical PTT
 
@@ -86,4 +102,4 @@ On link loss Dondji stops satellite control. If PTT is held, serial configuratio
 
 ## UI scheduling
 
-USB parsing/RF application and LCD refresh are deliberately decoupled. Incoming updates may run at high rate, while the tracking page requests redraw at about 5 Hz. LCD work must never be performed from the USB ISR or directly from the packet parser.
+USB parsing/RF application and LCD refresh are deliberately decoupled. Incoming updates may run at high rate, while the tracking page requests redraw at about 5 Hz from its own timer. LCD work is never performed from the USB ISR or directly from the packet parser.

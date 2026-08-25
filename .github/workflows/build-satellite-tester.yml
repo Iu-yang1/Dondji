@@ -1,0 +1,68 @@
+name: Build Satellite Tester
+
+on:
+  push:
+    branches:
+      - motorola_r7
+    paths:
+      - "tools/satellite_test/**"
+      - ".github/workflows/build-satellite-tester.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/satellite_test/requirements.txt
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/satellite_test/requirements.txt
+          pip install pyinstaller==6.15.0
+
+      - name: Syntax and protocol tests
+        shell: pwsh
+        run: |
+          python -m py_compile tools/satellite_test/*.py
+          Push-Location tools/satellite_test
+          python -m unittest -v
+          Pop-Location
+
+      - name: Build single-file GUI
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name DondjiSatelliteTester `
+            --collect-submodules serial `
+            tools/satellite_test/app.py
+
+      - name: Show executable details
+        shell: pwsh
+        run: |
+          Get-Item dist\DondjiSatelliteTester.exe | Format-List Name,Length,LastWriteTime
+          Get-FileHash dist\DondjiSatelliteTester.exe -Algorithm SHA256
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v6
+        with:
+          name: DondjiSatelliteTester-Windows-x64
+          path: dist/DondjiSatelliteTester.exe
+          if-no-files-found: error
+          compression-level: 9

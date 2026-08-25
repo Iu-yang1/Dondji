@@ -11,6 +11,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  */
 
 #include "driver/vcp.h"
@@ -68,7 +69,11 @@ bool VCP_ScreenshotPing(void)
     static ParseState_t state    = STATE_IDLE;
 
     bool     connected = false;
-    uint8_t  write_ptr = VCP_RxBufPointer;
+    uint8_t  write_ptr = VCP_RxBufPointer;  // snapshot once — ISR may update concurrently
+
+    // Cap bytes processed per call to VCP_RX_BUF_SIZE.
+    // Prevents unbounded loop if the ISR write pointer laps read_ptr
+    // (buffer overflow / corrupted state), which would freeze the firmware.
     uint32_t processed = 0;
 
     while (read_ptr != write_ptr && processed < VCP_RX_BUF_SIZE)

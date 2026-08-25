@@ -163,6 +163,7 @@ enable_feature(ENABLE_CN_RF
     app/dsb_tx.c
     app/cn_rf_ops.c
     app/cn_rf_menu_bridge.c
+    app/satellite.c
 )
 
 if(ENABLE_CN_RF)
@@ -179,6 +180,8 @@ if(ENABLE_CN_RF)
         "-Wl,--wrap=RF_PROFILE_ApplyRx"
         "-Wl,--wrap=RF_PROFILE_ApplyTx"
         "-Wl,--wrap=RF_PROFILE_TimeSlice10ms"
+        "-Wl,--wrap=APP_Update"
+        "-Wl,--wrap=APP_TimeSlice10ms"
     )
 endif()
 

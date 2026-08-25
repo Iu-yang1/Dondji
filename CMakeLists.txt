@@ -95,6 +95,36 @@ add_subdirectory(App)
 
 target_link_libraries(${EXE_NAME} Core App)
 
+if(ENABLE_CN_RF)
+    # GNU ld --wrap only rewrites unresolved references. With whole-program LTO,
+    # calls can otherwise bind directly to the legacy implementation before the
+    # linker sees them, causing the satellite wrappers to be garbage-collected.
+    # Compile only the five wrapped legacy implementations under their __real_*
+    # names in the final executable's source scope. Public callers keep the
+    # original names and therefore pass through the existing wrappers.
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/App/app/app.c"
+        TARGET_DIRECTORY ${EXE_NAME}
+        PROPERTIES COMPILE_DEFINITIONS
+            "APP_Update=__real_APP_Update;APP_TimeSlice10ms=__real_APP_TimeSlice10ms"
+    )
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/App/ui/ui.c"
+        TARGET_DIRECTORY ${EXE_NAME}
+        PROPERTIES COMPILE_DEFINITIONS "GUI_DisplayScreen=__real_GUI_DisplayScreen"
+    )
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/App/ui/status.c"
+        TARGET_DIRECTORY ${EXE_NAME}
+        PROPERTIES COMPILE_DEFINITIONS "UI_DisplayStatus=__real_UI_DisplayStatus"
+    )
+    set_source_files_properties(
+        "${CMAKE_SOURCE_DIR}/App/driver/keyboard.c"
+        TARGET_DIRECTORY ${EXE_NAME}
+        PROPERTIES COMPILE_DEFINITIONS "KEYBOARD_Poll=__real_KEYBOARD_Poll"
+    )
+endif()
+
 target_compile_definitions(${EXE_NAME} PRIVATE $<$<CONFIG:Debug>:DEBUG>)
 target_link_libraries(${EXE_NAME} ${TOOLCHAIN_LINK_LIBRARIES})
 

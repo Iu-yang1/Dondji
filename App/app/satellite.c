@@ -19,6 +19,7 @@
 #define SAT_STALE_TICKS          50u
 #define SAT_LOST_TICKS           300u
 #define SAT_RATE_WINDOW_TICKS    100u
+#define SAT_UI_REFRESH_TICKS     20u
 #define SAT_MAX_INNER_BYTES      (SAT_PROTOCOL_MAX_WIRE_BYTES - 8u)
 
 static const uint8_t kObfuscation[16] = {
@@ -39,13 +40,9 @@ static SAT_Snapshot_t sSnapshot;
 static uint16_t sVcpReadIndex;
 static uint8_t sRateTicks;
 static uint8_t sUpdatesInWindow;
+static uint8_t sUiTicks;
 static bool sRfDirty;
 static bool sWaitingPttRelease;
-
-static uint16_t ringIndex(uint16_t index)
-{
-    return index >= VCP_RX_BUF_SIZE ? (uint16_t)(index - VCP_RX_BUF_SIZE) : index;
-}
 
 static uint16_t ringAdvance(uint16_t index, uint16_t count)
 {
@@ -85,8 +82,7 @@ static uint32_t quantizedHz(uint32_t hz)
 
 static bool validFrequencyHz(uint32_t hz)
 {
-    const uint32_t f10 = hzTo10Hz(hz);
-    return RX_freq_check(f10) == 0;
+    return RX_freq_check(hzTo10Hz(hz)) == 0;
 }
 
 static bool exactCtcss(uint16_t ctcss)
@@ -197,6 +193,7 @@ static void restoreSession(void)
     sWaitingPttRelease = false;
     sRateTicks = 0u;
     sUpdatesInWindow = 0u;
+    sUiTicks = 0u;
     gSerialConfigCountDown_500ms = 0u;
     gUpdateDisplay = true;
     gUpdateStatus = true;
@@ -227,6 +224,8 @@ static uint16_t startSession(const SAT_Begin_t *begin)
 
     if (begin->major != SAT_PROTOCOL_MAJOR)
         error |= SAT_ERR_BAD_VERSION;
+    if (begin->session_id == 0u)
+        error |= SAT_ERR_BAD_SESSION;
     if (sState.active || SerialConfigInProgress() || gCurrentFunction == FUNCTION_TRANSMIT ||
         gScanStateDir != SCAN_OFF)
         error |= SAT_ERR_BUSY;
@@ -302,6 +301,7 @@ static uint16_t startSession(const SAT_Begin_t *begin)
     sRfDirty = false;
     sRateTicks = 0u;
     sUpdatesInWindow = 0u;
+    sUiTicks = 0u;
     gUpdateDisplay = true;
     gUpdateStatus = true;
     if (sState.ui_visible)
@@ -424,19 +424,19 @@ static void handleCommand(uint16_t id, const uint8_t *data, uint16_t size)
             return;
         SAT_Status_t request;
         memcpy(&request, data, sizeof(request));
-        if (sState.active && request.session_id != 0u && request.session_id != sState.session_id) {
-            sendSimpleStatus(SAT_REPLY_STATUS, request.session_id, SAT_ERR_BAD_SESSION);
-            return;
-        }
+        const bool badSession = sState.active && request.session_id != 0u &&
+                                request.session_id != sState.session_id;
         SAT_StatusReply_t reply = {
-            .session_id = sState.session_id,
+            .session_id = badSession ? request.session_id : sState.session_id,
             .received_seq = sState.received_seq,
             .applied_seq = sState.applied_seq,
-            .error_flags = sState.error_flags,
+            .error_flags = badSession ? SAT_ERR_BAD_SESSION : sState.error_flags,
             .applied_hz = sState.applied_hz,
             .target_tx_hz = sState.tx_hz,
             .age_ms = (uint16_t)MIN((uint32_t)sState.age_ticks_10ms * 10u, UINT16_MAX),
             .update_rate_hz = sState.update_rate_hz,
+            .crc_errors = sState.crc_errors,
+            .dropped_updates = sState.dropped_updates,
             .link_state = SAT_GetLinkState(),
             .ptt = gCurrentFunction == FUNCTION_TRANSMIT,
             .ui_visible = SAT_IsUiVisible(),
@@ -590,6 +590,12 @@ void SAT_TimeSlice10ms(void)
         sUpdatesInWindow = 0u;
     }
 
+    if (++sUiTicks >= SAT_UI_REFRESH_TICKS) {
+        sUiTicks = 0u;
+        if (sState.ui_visible)
+            gUpdateDisplay = true;
+    }
+
     if (sState.age_ticks_10ms > SAT_LOST_TICKS) {
         sState.error_flags |= SAT_ERR_LINK_TIMEOUT;
         sState.ending = true;
@@ -611,9 +617,6 @@ void SAT_TimeSlice10ms(void)
             return;
         }
     }
-
-    if (sState.ui_visible && (sState.age_ticks_10ms % 20u) == 0u)
-        gUpdateDisplay = true;
 }
 
 void __real_APP_Update(void);

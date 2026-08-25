@@ -6,12 +6,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
- *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "driver/vcp.h"
@@ -36,8 +35,10 @@ void VCP_Init()
         .size = sizeof(VCP_RxBuf),
         .write_pointer = &VCP_RxBufPointer,
     };
-    cdc_acm_init(rx_buf);
+    if (cdc_acm_init(rx_buf) != 0)
+        return;
 
+    NVIC_ClearPendingIRQ(USBD_IRQn);
     NVIC_SetPriority(USBD_IRQn, 3);
     NVIC_EnableIRQ(USBD_IRQn);
 }
@@ -67,11 +68,7 @@ bool VCP_ScreenshotPing(void)
     static ParseState_t state    = STATE_IDLE;
 
     bool     connected = false;
-    uint8_t  write_ptr = VCP_RxBufPointer;  // snapshot once — ISR may update concurrently
-
-    // Cap bytes processed per call to VCP_RX_BUF_SIZE.
-    // Prevents unbounded loop if the ISR write pointer laps read_ptr
-    // (buffer overflow / corrupted state), which would freeze the firmware.
+    uint8_t  write_ptr = VCP_RxBufPointer;
     uint32_t processed = 0;
 
     while (read_ptr != write_ptr && processed < VCP_RX_BUF_SIZE)

@@ -4,25 +4,25 @@
 #include <stdint.h>
 
 #define SAT_PROTOCOL_MAJOR          1u
-#define SAT_PROTOCOL_MINOR          0u
+#define SAT_PROTOCOL_MINOR          1u
 #define SAT_PROTOCOL_MAX_WIRE_BYTES 64u
 #define SAT_PROTOCOL_MAX_UPDATE_HZ  100u
 #define SAT_FREQUENCY_RESOLUTION_HZ 10u
 
-#define SAT_CMD_HELLO       0x0700u
-#define SAT_REPLY_HELLO     0x0701u
-#define SAT_CMD_BEGIN       0x0702u
-#define SAT_REPLY_BEGIN     0x0703u
-#define SAT_CMD_UPDATE      0x0704u
-#define SAT_REPLY_UPDATE    0x0705u
-#define SAT_CMD_STATUS      0x0706u
-#define SAT_REPLY_STATUS    0x0707u
-#define SAT_CMD_END         0x0708u
-#define SAT_REPLY_END       0x0709u
-#define SAT_CMD_UI_CONTROL  0x070Au
+#define SAT_CMD_HELLO        0x0700u
+#define SAT_REPLY_HELLO      0x0701u
+#define SAT_CMD_BEGIN        0x0702u
+#define SAT_REPLY_BEGIN      0x0703u
+#define SAT_CMD_UPDATE       0x0704u
+#define SAT_REPLY_UPDATE     0x0705u
+#define SAT_CMD_STATUS       0x0706u
+#define SAT_REPLY_STATUS     0x0707u
+#define SAT_CMD_END          0x0708u
+#define SAT_REPLY_END        0x0709u
+#define SAT_CMD_UI_CONTROL   0x070Au
 #define SAT_REPLY_UI_CONTROL 0x070Bu
-#define SAT_CMD_PTT         0x070Cu
-#define SAT_REPLY_PTT       0x070Du
+#define SAT_CMD_PTT          0x070Cu
+#define SAT_REPLY_PTT        0x070Du
 
 #define SAT_CAP_FREQ_PAIR    (1u << 0)
 #define SAT_CAP_HIGH_RATE    (1u << 1)
@@ -31,7 +31,7 @@
 #define SAT_CAP_PHYSICAL_PTT (1u << 4)
 #define SAT_CAP_TELEMETRY    (1u << 5)
 
-#define SAT_BEGIN_AUTO_SHOW  (1u << 0)
+#define SAT_BEGIN_AUTO_SHOW    (1u << 0)
 #define SAT_UPDATE_ACK_REQUEST (1u << 0)
 
 #define SAT_UI_SHOW   1u
@@ -143,6 +143,8 @@ typedef struct __attribute__((packed)) {
     uint32_t target_tx_hz;
     uint16_t age_ms;
     uint16_t update_rate_hz;
+    uint16_t crc_errors;
+    uint16_t dropped_updates;
     uint8_t link_state;
     uint8_t ptt;
     uint8_t ui_visible;
@@ -168,5 +170,7 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(SAT_Update_t) + sizeof(SAT_InnerHeader_t) + 8u <= SAT_PROTOCOL_MAX_WIRE_BYTES,
                "SAT_UPDATE must fit in one USB FS packet");
+_Static_assert(sizeof(SAT_StatusReply_t) + sizeof(SAT_InnerHeader_t) + 8u <= SAT_PROTOCOL_MAX_WIRE_BYTES,
+               "SAT_STATUS reply must fit in one USB FS packet");
 
 #endif

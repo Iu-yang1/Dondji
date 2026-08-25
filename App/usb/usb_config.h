@@ -83,7 +83,6 @@
 #include "py32f0xx.h"
 
 #define USBD_IRQn       USB_IRQn
-
 #define USBD_IRQHandler USB_IRQHandler
 
 typedef struct
@@ -93,7 +92,7 @@ typedef struct
     volatile uint32_t *write_pointer;
 } cdc_acm_rx_buf_t;
 
-void cdc_acm_init(cdc_acm_rx_buf_t rx_buf);
+int cdc_acm_init(cdc_acm_rx_buf_t rx_buf);
 void cdc_acm_data_send_with_dtr(const uint8_t *buf, uint32_t size);
 void cdc_acm_data_send_with_dtr_async(const uint8_t *buf, uint32_t size);
 

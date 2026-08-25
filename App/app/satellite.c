@@ -8,6 +8,7 @@
 #include "driver/bk4819.h"
 #include "driver/crc.h"
 #include "driver/gpio.h"
+#include "driver/py25q16.h"
 #include "driver/vcp.h"
 #include "frequencies.h"
 #include "functions.h"
@@ -21,6 +22,7 @@
 #define SAT_RATE_WINDOW_TICKS    100u
 #define SAT_UI_REFRESH_TICKS     20u
 #define SAT_MAX_INNER_BYTES      (SAT_PROTOCOL_MAX_WIRE_BYTES - 8u)
+#define SAT_TX_CAL_BASE          0x100D0u
 
 static const uint8_t kObfuscation[16] = {
     0x16, 0x6C, 0x14, 0xE6, 0x2E, 0x91, 0x0D, 0x40,
@@ -372,6 +374,43 @@ static void sendUpdateReply(void)
     sendFrame(SAT_REPLY_UPDATE, &reply, sizeof(reply));
 }
 
+static void fillTxDiagnostics(SAT_StatusReply_t *reply)
+{
+    VFO_Info_t *const vfo = gCurrentVfo != NULL ? gCurrentVfo : gTxVfo;
+    if (vfo == NULL || vfo->pTX == NULL)
+        return;
+
+    const FREQUENCY_Band_t band = FREQUENCY_GetBand(vfo->pTX->Frequency);
+    if (band < BAND1_50MHz || band >= BAND_N_ELEM)
+        return;
+
+    const uint32_t calBase = SAT_TX_CAL_BASE + ((uint32_t)band * 16u);
+    reply->tx_power = vfo->OUTPUT_POWER;
+    reply->txp_calculated = vfo->TXP_CalculatedSetting;
+    PY25Q16_ReadBuffer(calBase + 0u, reply->cal_low, sizeof(reply->cal_low));
+    PY25Q16_ReadBuffer(calBase + 3u, reply->cal_mid, sizeof(reply->cal_mid));
+    PY25Q16_ReadBuffer(calBase + 6u, reply->cal_high, sizeof(reply->cal_high));
+
+    reply->reg30 = BK4819_ReadRegister(BK4819_REG_30);
+    reply->reg33 = BK4819_ReadRegister(BK4819_REG_33);
+    reply->reg36 = BK4819_ReadRegister(BK4819_REG_36);
+    reply->reg37 = BK4819_ReadRegister(BK4819_REG_37);
+    reply->reg38 = BK4819_ReadRegister(BK4819_REG_38);
+    reply->reg39 = BK4819_ReadRegister(BK4819_REG_39);
+    reply->pa_enable = (reply->reg33 & (0x40u >> BK4819_GPIO1_PIN29_PA_ENABLE)) != 0u;
+}
+
+static void keepSessionAwake(void)
+{
+    if (!sState.active)
+        return;
+
+    gSchedulePowerSave = false;
+    gBatterySaveCountdown_10ms = battery_save_count_10ms;
+    if (gCurrentFunction == FUNCTION_POWER_SAVE)
+        FUNCTION_Select(FUNCTION_FOREGROUND);
+}
+
 static void handleCommand(uint16_t id, const uint8_t *data, uint16_t size)
 {
     switch (id) {
@@ -385,7 +424,8 @@ static void handleCommand(uint16_t id, const uint8_t *data, uint16_t size)
             .frequency_resolution_hz = SAT_FREQUENCY_RESOLUTION_HZ,
             .max_wire_bytes = SAT_PROTOCOL_MAX_WIRE_BYTES,
             .capabilities = SAT_CAP_FREQ_PAIR | SAT_CAP_HIGH_RATE | SAT_CAP_TRACK_UI |
-                            SAT_CAP_CTCSS | SAT_CAP_PHYSICAL_PTT | SAT_CAP_TELEMETRY,
+                            SAT_CAP_CTCSS | SAT_CAP_PHYSICAL_PTT | SAT_CAP_TELEMETRY |
+                            SAT_CAP_TX_DIAGNOSTICS,
         };
         sendFrame(SAT_REPLY_HELLO, &reply, sizeof(reply));
         break;
@@ -441,6 +481,7 @@ static void handleCommand(uint16_t id, const uint8_t *data, uint16_t size)
             .ptt = gCurrentFunction == FUNCTION_TRANSMIT,
             .ui_visible = SAT_IsUiVisible(),
         };
+        fillTxDiagnostics(&reply);
         sendFrame(SAT_REPLY_STATUS, &reply, sizeof(reply));
         break;
     }
@@ -623,7 +664,9 @@ void __real_APP_Update(void);
 void __wrap_APP_Update(void)
 {
     SAT_USB_Poll();
+    keepSessionAwake();
     __real_APP_Update();
+    keepSessionAwake();
     SAT_ApplyFastFrequency();
 }
 

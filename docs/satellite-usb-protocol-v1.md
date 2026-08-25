@@ -1,6 +1,6 @@
 # Dondji USB Satellite Protocol v1
 
-Current protocol version: **1.1**. Major version 1 keeps the same framing and realtime `SAT_UPDATE` layout; minor 1 adds status telemetry and tightens session validation.
+Current protocol version: **1.2**. Major version 1 keeps the same framing and realtime `SAT_UPDATE` layout; minor 1 added status counters/session hardening, and minor 2 adds compact TX diagnostics while keeping `SAT_STATUS` inside one 64-byte USB Full-Speed packet.
 
 Dondji remains the RF executor. Orbit propagation, transponder mapping and Doppler calculation stay on the host (for example Look4Sat-FT4). The radio receives final corrected RX/TX frequencies and lightweight display telemetry.
 
@@ -44,7 +44,7 @@ Realtime frames are constrained to at most 64 bytes on the wire so a `SAT_UPDATE
 | `0x0700 SAT_HELLO` | `0x0701` | Version/capability negotiation |
 | `0x0702 SAT_BEGIN` | `0x0703` | Start an exclusive satellite-control session |
 | `0x0704 SAT_UPDATE` | `0x0705` optional | High-rate RX/TX/Doppler/telemetry state stream |
-| `0x0706 SAT_STATUS` | `0x0707` | Read link/RF state and counters |
+| `0x0706 SAT_STATUS` | `0x0707` | Read link/RF state, counters, and v1.2 TX diagnostics |
 | `0x0708 SAT_END` | `0x0709` | End session and restore the user's radio state |
 | `0x070A SAT_UI_CONTROL` | `0x070B` | Show/hide/toggle the tracking screen |
 | `0x070C SAT_PTT` | `0x070D` | Reserved for a later remote-PTT phase; v1 replies unsupported |
@@ -56,6 +56,8 @@ The C wire structures live in `App/app/satellite_protocol.h` and are the normati
 `SAT_BEGIN` snapshots the active VFO and temporary receive-mode state, disables dual-watch/cross-band for deterministic RF ownership, and configures one VFO with independent RX and TX target frequencies. It does not write these temporary values to persistent settings.
 
 `session_id` must be nonzero. ID 0 is reserved for a wildcard `SAT_STATUS` request that asks for the currently active session. A second `SAT_BEGIN` is rejected while a session is active. `SAT_END` restores the snapshot. Starting a session is also rejected while transmitting, scanning, or another serial configuration session is active.
+
+While a satellite session is active, Dondji suppresses the normal battery power-save transition and wakes the RF path if the session is established while the radio was sleeping. This keeps realtime REG38/REG39 application alive for the whole session instead of allowing `received_seq` to advance while `applied_seq` stalls.
 
 ## Realtime update model
 
@@ -74,7 +76,7 @@ The host normally sends 10-20 updates/s. `SAT_HELLO` advertises a protocol capab
 
 ## Status telemetry
 
-Protocol 1.1 keeps `SAT_STATUS` inside one USB Full-Speed packet and reports:
+Protocol 1.2 makes the `SAT_STATUS` reply payload 52 bytes, which is exactly 64 bytes after the existing inner header and framing. It reports the v1.1 fields:
 
 - received and applied sequence numbers;
 - accumulated error flags;
@@ -84,7 +86,14 @@ Protocol 1.1 keeps `SAT_STATUS` inside one USB Full-Speed packet and reports:
 - dropped-update count inferred from sequence gaps;
 - link state, PTT state, and whether the satellite UI is visible.
 
-A bad nonzero session ID still returns the normal fixed-size `SAT_STATUS` reply with `SAT_ERR_BAD_SESSION`, so host parsers do not need a special short-error packet path.
+It then appends 24 bytes of read-only TX diagnostics:
+
+- current VFO output-power enum and `TXP_CalculatedSetting`;
+- logical BK4829 GPIO1 PA-enable state;
+- raw LOW/MID/HIGH three-point TX calibration bytes for the current TX band;
+- BK4829 REG30, REG33, REG36, REG37, REG38 and REG39.
+
+The diagnostics are available with wildcard session ID 0 even when no satellite session is active, so the Windows tester can inspect an ordinary FM transmission. A bad nonzero session ID still returns the normal fixed-size `SAT_STATUS` reply with `SAT_ERR_BAD_SESSION`.
 
 ## Physical PTT
 

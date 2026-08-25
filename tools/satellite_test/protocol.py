@@ -5,14 +5,14 @@ from dataclasses import dataclass
 
 
 APP_NAME = "Dondji Satellite USB Tester"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 VID = 0x36B7
 PID = 0xFFFF
 BAUDRATE = 115200
 
 PROTO_MAJOR = 1
-PROTO_MINOR = 1
+PROTO_MINOR = 2
 MAX_WIRE_BYTES = 64
 
 CMD_HELLO = 0x0700
@@ -38,6 +38,11 @@ SAT_UI_TOGGLE = 3
 SAT_MOD_KEEP = 0
 SAT_MOD_FM = 1
 
+STATUS_BASE_FMT = "<HHHHIIHHHHBBBB"
+STATUS_DIAG_FMT = "<BBB3s3s3sHHHHHH"
+STATUS_BASE_SIZE = struct.calcsize(STATUS_BASE_FMT)
+STATUS_DIAG_SIZE = struct.calcsize(STATUS_DIAG_FMT)
+
 CAP_NAMES = {
     1 << 0: "Frequency pair",
     1 << 1: "High-rate stream",
@@ -45,6 +50,18 @@ CAP_NAMES = {
     1 << 3: "CTCSS",
     1 << 4: "Physical PTT",
     1 << 5: "Telemetry",
+    1 << 6: "TX diagnostics",
+}
+
+POWER_NAMES = {
+    0: "USER",
+    1: "LOW1",
+    2: "LOW2",
+    3: "LOW3",
+    4: "LOW4",
+    5: "LOW5",
+    6: "MID",
+    7: "HIGH",
 }
 
 LINK_NAMES = {

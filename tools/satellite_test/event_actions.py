@@ -7,8 +7,9 @@ from pathlib import Path
 from tkinter import filedialog, messagebox
 
 from protocol import (
-    APP_NAME, CAP_NAMES, LINK_NAMES, RPL_BEGIN, RPL_END, RPL_HELLO, RPL_PTT, RPL_STATUS,
-    RPL_UI, RPL_UPDATE, ProtocolError, decode_errors, format_hz,
+    APP_NAME, CAP_NAMES, LINK_NAMES, POWER_NAMES, RPL_BEGIN, RPL_END, RPL_HELLO, RPL_PTT,
+    RPL_STATUS, RPL_UI, RPL_UPDATE, STATUS_BASE_FMT, STATUS_BASE_SIZE, STATUS_DIAG_FMT,
+    STATUS_DIAG_SIZE, ProtocolError, decode_errors, format_hz,
 )
 
 
@@ -69,9 +70,12 @@ class EventActionsMixin:
                 session, received, applied, errors, applied_hz, target_tx, age_ms, ptt, link = struct.unpack("<HHHHIIHBB", data)
                 self._apply_common_status(session, received, applied, errors, applied_hz, target_tx, age_ms, link, ptt, None, None, None)
             elif cid == RPL_STATUS:
-                if len(data) != 28:
-                    raise ProtocolError(f"STATUS_REPLY size={len(data)}, expected 28")
-                values = struct.unpack("<HHHHIIHHHHBBBB", data)
+                expected_v12 = STATUS_BASE_SIZE + STATUS_DIAG_SIZE
+                if len(data) not in (STATUS_BASE_SIZE, expected_v12):
+                    raise ProtocolError(
+                        f"STATUS_REPLY size={len(data)}, expected {STATUS_BASE_SIZE} (v1.1) or {expected_v12} (v1.2)"
+                    )
+                values = struct.unpack_from(STATUS_BASE_FMT, data, 0)
                 session, received, applied, errors, applied_hz, target_tx, age_ms, rate_hz, crc_errors, dropped, link, ptt, ui, _ = values
                 self.last_status = {
                     "session": session,
@@ -89,6 +93,37 @@ class EventActionsMixin:
                     "ui_visible": ui,
                 }
                 self._apply_common_status(session, received, applied, errors, applied_hz, target_tx, age_ms, link, ptt, rate_hz, crc_errors, dropped, ui)
+
+                if len(data) == expected_v12:
+                    diag = struct.unpack_from(STATUS_DIAG_FMT, data, STATUS_BASE_SIZE)
+                    tx_power, tx_bias, pa_enable, cal_low, cal_mid, cal_high, reg30, reg33, reg36, reg37, reg38, reg39 = diag
+                    power_name = POWER_NAMES.get(tx_power, f"UNKNOWN({tx_power})")
+                    self.metric_vars["tx_power"].set(power_name)
+                    self.metric_vars["tx_bias"].set(f"{tx_bias} / 0x{tx_bias:02X}")
+                    self.metric_vars["pa_enable"].set("HIGH" if pa_enable else "LOW")
+                    self.metric_vars["tx_cal"].set(
+                        f"{cal_low.hex(' ').upper()} / {cal_mid.hex(' ').upper()} / {cal_high.hex(' ').upper()}"
+                    )
+                    self.metric_vars["regs_a"].set(f"30={reg30:04X} 33={reg33:04X} 36={reg36:04X}")
+                    self.metric_vars["regs_b"].set(f"37={reg37:04X} 38={reg38:04X} 39={reg39:04X}")
+                    self.last_status.update({
+                        "tx_power": tx_power,
+                        "txp_calculated": tx_bias,
+                        "pa_enable": pa_enable,
+                        "reg30": reg30,
+                        "reg33": reg33,
+                        "reg36": reg36,
+                        "reg37": reg37,
+                        "reg38": reg38,
+                        "reg39": reg39,
+                    })
+                else:
+                    self.metric_vars["tx_power"].set("v1.1 firmware")
+                    self.metric_vars["tx_bias"].set("-")
+                    self.metric_vars["pa_enable"].set("-")
+                    self.metric_vars["tx_cal"].set("-")
+                    self.metric_vars["regs_a"].set("-")
+                    self.metric_vars["regs_b"].set("-")
             elif cid in (RPL_END, RPL_UI, RPL_PTT):
                 if len(data) != 4:
                     raise ProtocolError(f"Simple reply size={len(data)}, expected 4")

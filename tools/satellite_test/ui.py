@@ -132,12 +132,13 @@ class UiMixin:
         ttk.Button(btns, text="清零 Host 统计", command=self.reset_host_stats).grid(row=0, column=3, sticky="ew", padx=2)
 
     def _build_telemetry(self, parent: ttk.Frame) -> None:
-        frame = ttk.LabelFrame(parent, text="实时 Telemetry", padding=8)
+        frame = ttk.LabelFrame(parent, text="实时 Telemetry / TX Diagnostics", padding=8)
         frame.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         keys = [
             "protocol", "caps", "session", "link", "received_seq", "applied_seq",
             "device_crc", "device_drop", "host_crc", "host_bad", "rate", "age",
             "applied", "tx_target", "ptt", "ui", "errors",
+            "tx_power", "tx_bias", "pa_enable", "tx_cal", "regs_a", "regs_b",
         ]
         self.metric_vars = {key: tk.StringVar(value="-") for key in keys}
         labels = [
@@ -148,6 +149,9 @@ class UiMixin:
             ("Device rate", "rate"), ("Packet age", "age"),
             ("Applied RF", "applied"), ("TX target", "tx_target"),
             ("PTT", "ptt"), ("UI", "ui"), ("Error flags", "errors"),
+            ("TX power", "tx_power"), ("TXP bias", "tx_bias"),
+            ("PA enable", "pa_enable"), ("TX calib L/M/H", "tx_cal"),
+            ("REG30/33/36", "regs_a"), ("REG37/38/39", "regs_b"),
         ]
         for c in range(4):
             frame.columnconfigure(c, weight=1 if c % 2 else 0)

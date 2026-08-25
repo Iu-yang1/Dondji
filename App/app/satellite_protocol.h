@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define SAT_PROTOCOL_MAJOR          1u
-#define SAT_PROTOCOL_MINOR          1u
+#define SAT_PROTOCOL_MINOR          2u
 #define SAT_PROTOCOL_MAX_WIRE_BYTES 64u
 #define SAT_PROTOCOL_MAX_UPDATE_HZ  100u
 #define SAT_FREQUENCY_RESOLUTION_HZ 10u
@@ -24,12 +24,13 @@
 #define SAT_CMD_PTT          0x070Cu
 #define SAT_REPLY_PTT        0x070Du
 
-#define SAT_CAP_FREQ_PAIR    (1u << 0)
-#define SAT_CAP_HIGH_RATE    (1u << 1)
-#define SAT_CAP_TRACK_UI     (1u << 2)
-#define SAT_CAP_CTCSS        (1u << 3)
-#define SAT_CAP_PHYSICAL_PTT (1u << 4)
-#define SAT_CAP_TELEMETRY    (1u << 5)
+#define SAT_CAP_FREQ_PAIR      (1u << 0)
+#define SAT_CAP_HIGH_RATE      (1u << 1)
+#define SAT_CAP_TRACK_UI       (1u << 2)
+#define SAT_CAP_CTCSS          (1u << 3)
+#define SAT_CAP_PHYSICAL_PTT   (1u << 4)
+#define SAT_CAP_TELEMETRY      (1u << 5)
+#define SAT_CAP_TX_DIAGNOSTICS (1u << 6)
 
 #define SAT_BEGIN_AUTO_SHOW    (1u << 0)
 #define SAT_UPDATE_ACK_REQUEST (1u << 0)
@@ -149,6 +150,21 @@ typedef struct __attribute__((packed)) {
     uint8_t ptt;
     uint8_t ui_visible;
     uint8_t reserved;
+
+    /* v1.2 TX diagnostics. Raw values are intentionally compact so STATUS
+     * remains exactly one USB Full-Speed bulk packet on the wire. */
+    uint8_t tx_power;
+    uint8_t txp_calculated;
+    uint8_t pa_enable;
+    uint8_t cal_low[3];
+    uint8_t cal_mid[3];
+    uint8_t cal_high[3];
+    uint16_t reg30;
+    uint16_t reg33;
+    uint16_t reg36;
+    uint16_t reg37;
+    uint16_t reg38;
+    uint16_t reg39;
 } SAT_StatusReply_t;
 
 typedef struct __attribute__((packed)) {
@@ -170,7 +186,7 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(SAT_Update_t) + sizeof(SAT_InnerHeader_t) + 8u <= SAT_PROTOCOL_MAX_WIRE_BYTES,
                "SAT_UPDATE must fit in one USB FS packet");
-_Static_assert(sizeof(SAT_StatusReply_t) + sizeof(SAT_InnerHeader_t) + 8u <= SAT_PROTOCOL_MAX_WIRE_BYTES,
-               "SAT_STATUS reply must fit in one USB FS packet");
+_Static_assert(sizeof(SAT_StatusReply_t) + sizeof(SAT_InnerHeader_t) + 8u == SAT_PROTOCOL_MAX_WIRE_BYTES,
+               "SAT_STATUS v1.2 reply must fill exactly one USB FS packet");
 
 #endif

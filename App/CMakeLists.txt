@@ -164,6 +164,7 @@ enable_feature(ENABLE_CN_RF
     app/cn_rf_ops.c
     app/cn_rf_menu_bridge.c
     app/satellite.c
+    ui/satellite.c
 )
 
 if(ENABLE_CN_RF)
@@ -182,6 +183,9 @@ if(ENABLE_CN_RF)
         "-Wl,--wrap=RF_PROFILE_TimeSlice10ms"
         "-Wl,--wrap=APP_Update"
         "-Wl,--wrap=APP_TimeSlice10ms"
+        "-Wl,--wrap=GUI_DisplayScreen"
+        "-Wl,--wrap=UI_DisplayStatus"
+        "-Wl,--wrap=KEYBOARD_Poll"
     )
 endif()
 
